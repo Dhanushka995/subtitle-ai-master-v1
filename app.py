@@ -9,7 +9,7 @@ import os
 class SubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("AI Subtitle Master Pro v2")
+        self.root.title("AI Subtitle Master Pro v3 (Stable)")
         self.root.geometry("600x650")
         self.root.configure(bg="#2c3e50")
 
@@ -19,8 +19,7 @@ class SubtitleApp:
         self.api_entry.pack(pady=5, ipady=5)
 
         self.file_path = ""
-        self.btn_file = tk.Button(root, text="Select English SRT File", command=self.open_file, bg="#2980b9", fg="white", width=25)
-        self.btn_file.pack(pady=15)
+        tk.Button(root, text="Select English SRT File", command=self.open_file, bg="#2980b9", fg="white", width=25).pack(pady=15)
         self.lbl_status_file = tk.Label(root, text="No file selected", bg="#2c3e50", fg="#95a5a6")
         self.lbl_status_file.pack()
 
@@ -28,8 +27,9 @@ class SubtitleApp:
         settings_frame.pack(pady=20)
         tk.Label(settings_frame, text="Chunk Size:", bg="#2c3e50", fg="white").grid(row=0, column=0, padx=5)
         self.chunk_var = tk.StringVar(value="30")
-        self.chunk_menu = ttk.Combobox(settings_frame, textvariable=self.chunk_var, values=["10", "20", "30", "40", "50"], width=5)
+        self.chunk_menu = ttk.Combobox(settings_frame, textvariable=self.chunk_var, values=["10", "20", "30", "40"], width=5)
         self.chunk_menu.grid(row=0, column=1, padx=5)
+        
         tk.Label(settings_frame, text="Language:", bg="#2c3e50", fg="white").grid(row=0, column=2, padx=5)
         self.lang_var = tk.StringVar(value="Sinhala")
         self.lang_menu = ttk.Combobox(settings_frame, textvariable=self.lang_var, values=["Sinhala", "Tamil", "Hindi"], width=10)
@@ -52,7 +52,7 @@ class SubtitleApp:
 
     def run_thread(self):
         if not self.file_path or not self.api_entry.get():
-            messagebox.showwarning("Warning", "Enter API Key and select a file!")
+            messagebox.showwarning("Input Error", "Enter API Key and select an SRT file.")
             return
         self.btn_start.config(state="disabled")
         threading.Thread(target=self.start_logic, daemon=True).start()
@@ -60,8 +60,8 @@ class SubtitleApp:
     def start_logic(self):
         try:
             genai.configure(api_key=self.api_entry.get())
-            # Updated Model to fix 404 Error
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            # FIXED: Using the most stable model name
+            model = genai.GenerativeModel('gemini-1.5-flash')
             
             with open(self.file_path, 'r', encoding='utf-8') as f:
                 data = f.read()
@@ -71,33 +71,36 @@ class SubtitleApp:
             target = self.lang_var.get()
             output_content = ""
 
-            self.log(f"Process Started. Total chunks: {(len(blocks)//c_size)+1}")
+            self.log(f"Process Started. Model: Gemini-1.5-Flash")
+            self.log(f"Total Chunks: {(len(blocks)//c_size)+1}")
 
             for i in range(0, len(blocks), c_size):
                 batch = "\n\n".join(blocks[i:i + c_size])
-                prompt = f"Translate the following SRT subtitles to natural {target}. Output ONLY the translated SRT text. Keep timing and numbers original:\n\n{batch}"
+                prompt = f"Translate the following SRT subtitles to natural {target}. Preserve SRT numbering and timestamps. Return only the translated subtitles:\n\n{batch}"
                 
                 try:
                     response = model.generate_content(prompt)
                     if response.text:
                         clean = response.text.replace('```srt', '').replace('```', '').strip()
                         output_content += clean + "\n\n"
-                        self.log(f"Completed chunk { (i//c_size) + 1 }")
+                        self.log(f"✅ Chunk { (i//c_size) + 1 } Success")
+                    else:
+                        self.log(f"⚠️ Chunk { (i//c_size) + 1 } returned empty.")
                 except Exception as api_err:
-                    self.log(f"Retry: {str(api_err)}")
-                    time.sleep(15)
+                    self.log(f"❌ API Error: {str(api_err)}")
+                    time.sleep(15) # Safety Wait
                 
-                time.sleep(10) # 429 Error Safety
+                time.sleep(10) # Essential Anti-429 Delay
 
-            save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"Translated_{target}.srt")
+            save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"Final_{target}.srt")
             if save_path:
                 with open(save_path, 'w', encoding='utf-8') as f:
                     f.write(output_content)
-                self.log("Success! File saved.")
-                messagebox.showinfo("Done", "Translation completed!")
+                self.log("💾 SUCCESS! File Saved.")
+                messagebox.showinfo("Done", "Translation completed and saved!")
 
         except Exception as e:
-            self.log(f"Error: {str(e)}")
+            self.log(f"CRITICAL Error: {str(e)}")
             messagebox.showerror("Error", str(e))
         finally:
             self.btn_start.config(state="normal")
