@@ -10,14 +10,12 @@ import os
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v5")
+        self.root.title("Universal AI Subtitle Master v6 (Auto-Detect)")
         self.root.geometry("650x700")
         self.root.configure(bg="#1e272e")
 
-        # Header
         tk.Label(root, text="UNIVERSAL AI TRANSLATOR", bg="#1e272e", fg="#00d8d6", font=("Arial", 16, "bold")).pack(pady=15)
 
-        # AI Provider Selection
         provider_frame = tk.Frame(root, bg="#1e272e")
         provider_frame.pack(pady=5)
         tk.Label(provider_frame, text="Select AI System:", bg="#1e272e", fg="white", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=10)
@@ -25,18 +23,15 @@ class UniversalSubtitleApp:
         self.provider_menu = ttk.Combobox(provider_frame, textvariable=self.provider_var, values=["Google Gemini", "OpenAI (ChatGPT)", "DeepSeek"], width=20, state="readonly")
         self.provider_menu.pack(side=tk.LEFT)
 
-        # API Key Input
         tk.Label(root, text="Enter API Key:", bg="#1e272e", fg="#d2dae2").pack(pady=(15, 0))
         self.api_entry = tk.Entry(root, width=65, show="*", bg="#485460", fg="white", borderwidth=0)
         self.api_entry.pack(pady=5, ipady=6)
 
-        # File Selection
         self.file_path = ""
         tk.Button(root, text="📂 Select English SRT File", command=self.open_file, bg="#0fb9b1", fg="white", font=("Arial", 10, "bold"), width=30).pack(pady=15)
         self.lbl_status_file = tk.Label(root, text="No file selected", bg="#1e272e", fg="#808e9b")
         self.lbl_status_file.pack()
 
-        # Settings
         settings_frame = tk.Frame(root, bg="#1e272e")
         settings_frame.pack(pady=20)
         
@@ -48,11 +43,9 @@ class UniversalSubtitleApp:
         self.lang_var = tk.StringVar(value="Sinhala")
         ttk.Combobox(settings_frame, textvariable=self.lang_var, values=["Sinhala", "Tamil", "Hindi"], width=12).grid(row=0, column=3, padx=5)
 
-        # Logs Box
-        self.log_box = tk.Text(root, height=10, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
+        self.log_box = tk.Text(root, height=12, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
         self.log_box.pack(pady=10, padx=20)
 
-        # Start Button
         self.btn_start = tk.Button(root, text="🚀 START TRANSLATION", command=self.run_thread, bg="#ff3f34", fg="white", font=("Arial", 12, "bold"), width=35, height=2)
         self.btn_start.pack(pady=10)
 
@@ -86,6 +79,25 @@ class UniversalSubtitleApp:
             output_content = ""
 
             self.log(f"System: {provider}")
+            
+            # --- 100% FIX FOR GEMINI (Auto-Detect Model) ---
+            gemini_model_name = None
+            if provider == "Google Gemini":
+                self.log("Scanning your API key for available models...")
+                genai.configure(api_key=api_key)
+                try:
+                    for m in genai.list_models():
+                        if 'generateContent' in m.supported_generation_methods:
+                            gemini_model_name = m.name
+                            if 'flash' in m.name.lower(): # Prefer flash models
+                                break
+                    if gemini_model_name:
+                        self.log(f"Success! Auto-selected model: {gemini_model_name}")
+                    else:
+                        raise Exception("No usable models found for this Google Key.")
+                except Exception as e:
+                    raise Exception(f"Invalid Google API Key or Region Blocked: {e}")
+
             self.log(f"Total Blocks to Translate: {(len(blocks)//c_size)+1}")
 
             for i in range(0, len(blocks), c_size):
@@ -95,10 +107,8 @@ class UniversalSubtitleApp:
                 try:
                     result_text = ""
                     
-                    # --- AI ROUTING LOGIC ---
                     if provider == "Google Gemini":
-                        genai.configure(api_key=api_key)
-                        model = genai.GenerativeModel('gemini-pro')
+                        model = genai.GenerativeModel(gemini_model_name)
                         response = model.generate_content(prompt)
                         result_text = response.text
                         
@@ -111,7 +121,6 @@ class UniversalSubtitleApp:
                         result_text = response.choices[0].message.content
                         
                     elif provider == "DeepSeek":
-                        # DeepSeek uses OpenAI compatible API
                         client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
                         response = client.chat.completions.create(
                             model="deepseek-chat",
@@ -119,7 +128,6 @@ class UniversalSubtitleApp:
                         )
                         result_text = response.choices[0].message.content
 
-                    # --- PROCESSING RESULT ---
                     if result_text:
                         clean = result_text.replace('```srt', '').replace('```', '').strip()
                         output_content += clean + "\n\n"
@@ -128,12 +136,20 @@ class UniversalSubtitleApp:
                         self.log(f"⚠️ Chunk { (i//c_size) + 1 } Empty")
 
                 except Exception as api_err:
-                    self.log(f"❌ API Error: Retrying... ({str(api_err)[:50]})")
-                    time.sleep(15) # Wait before retry
+                    err_msg = str(api_err)
+                    # Handing DeepSeek 402 Error Gracefully
+                    if "402" in err_msg or "Insufficient" in err_msg:
+                        self.log(f"❌ FATAL ERROR: Account has no balance/credits!")
+                        messagebox.showerror("No Balance", "Your API account has 0 credits. Please top-up or use a free Google Gemini Key.")
+                        self.btn_start.config(state="normal")
+                        return # Stop everything
+                    else:
+                        self.log(f"❌ API Error: Retrying... ({err_msg[:50]})")
+                        time.sleep(15) 
                 
-                time.sleep(8) # Essential delay to prevent rate limits
+                time.sleep(8) 
 
-            save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"Universal_{target}.srt")
+            save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"Translated_{target}.srt")
             if save_path:
                 with open(save_path, 'w', encoding='utf-8') as f:
                     f.write(output_content)
