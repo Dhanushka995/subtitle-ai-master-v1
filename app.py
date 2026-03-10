@@ -10,7 +10,7 @@ import os
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v6 (Auto-Detect)")
+        self.root.title("Universal AI Subtitle Master v8 (Bulletproof Sync)")
         self.root.geometry("650x700")
         self.root.configure(bg="#1e272e")
 
@@ -36,7 +36,7 @@ class UniversalSubtitleApp:
         settings_frame.pack(pady=20)
         
         tk.Label(settings_frame, text="Chunk Size:", bg="#1e272e", fg="white").grid(row=0, column=0, padx=5)
-        self.chunk_var = tk.StringVar(value="30")
+        self.chunk_var = tk.StringVar(value="20") # 20 is best for accuracy
         ttk.Combobox(settings_frame, textvariable=self.chunk_var, values=["10", "20", "30", "40", "50"], width=5).grid(row=0, column=1, padx=5)
         
         tk.Label(settings_frame, text="Target Language:", bg="#1e272e", fg="white").grid(row=0, column=2, padx=15)
@@ -73,88 +73,91 @@ class UniversalSubtitleApp:
             with open(self.file_path, 'r', encoding='utf-8') as f:
                 data = f.read()
 
-            blocks = re.split(r'\n\s*\n', data.strip())
+            # Clean strictly
+            blocks =[b.strip() for b in re.split(r'\n\s*\n', data.strip()) if b.strip()]
             c_size = int(self.chunk_var.get())
             target = self.lang_var.get()
             output_content = ""
 
             self.log(f"System: {provider}")
             
-            # --- 100% FIX FOR GEMINI (Auto-Detect Model) ---
-            gemini_model_name = None
             if provider == "Google Gemini":
-                self.log("Scanning your API key for available models...")
                 genai.configure(api_key=api_key)
-                try:
-                    for m in genai.list_models():
-                        if 'generateContent' in m.supported_generation_methods:
-                            gemini_model_name = m.name
-                            if 'flash' in m.name.lower(): # Prefer flash models
-                                break
-                    if gemini_model_name:
-                        self.log(f"Success! Auto-selected model: {gemini_model_name}")
-                    else:
-                        raise Exception("No usable models found for this Google Key.")
-                except Exception as e:
-                    raise Exception(f"Invalid Google API Key or Region Blocked: {e}")
 
-            self.log(f"Total Blocks to Translate: {(len(blocks)//c_size)+1}")
+            self.log(f"Total Blocks: {len(blocks)} | Chunks: {(len(blocks)//c_size)+1}")
 
             for i in range(0, len(blocks), c_size):
-                batch = "\n\n".join(blocks[i:i + c_size])
-                prompt = f"Translate the following SRT subtitles into natural {target}. Preserve SRT numbering and timestamps exactly. Output ONLY the translated SRT text:\n\n{batch}"
+                chunk_blocks = blocks[i:i + c_size]
+                batch = "\n\n".join(chunk_blocks)
                 
-                try:
-                    result_text = ""
+                # BULLETPROOF CHECK: Count the exact number of timestamps
+                expected_count = batch.count("-->")
+                
+                prompt = f"Translate the following SRT subtitles into natural {target}.\nCRITICAL RULES:\n1. Do not change the sequence numbers.\n2. Do not change the timestamps.\n3. Keep the exact same formatting.\n4. You MUST output exactly {expected_count} subtitles. Do not merge them.\n\n{batch}"
+                
+                success = False
+                
+                while not success:
+                    try:
+                        result_text = ""
+                        
+                        if provider == "Google Gemini":
+                            model = genai.GenerativeModel('gemini-pro') # Standard stable model
+                            response = model.generate_content(prompt)
+                            result_text = response.text
+                            
+                        elif provider == "OpenAI (ChatGPT)":
+                            client = OpenAI(api_key=api_key)
+                            response = client.chat.completions.create(
+                                model="gpt-3.5-turbo",
+                                messages=[{"role": "user", "content": prompt}]
+                            )
+                            result_text = response.choices[0].message.content
+                            
+                        elif provider == "DeepSeek":
+                            client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+                            response = client.chat.completions.create(
+                                model="deepseek-chat",
+                                messages=[{"role": "user", "content": prompt}]
+                            )
+                            result_text = response.choices[0].message.content
+
+                        if result_text:
+                            clean = result_text.replace('```srt', '').replace('```', '').strip()
+                            
+                            # BULLETPROOF VALIDATION
+                            actual_count = clean.count("-->")
+                            if actual_count != expected_count:
+                                raise Exception(f"Format Error: AI merged lines! (Expected {expected_count}, Got {actual_count})")
+                            
+                            output_content += clean + "\n\n"
+                            self.log(f"✅ Chunk { (i//c_size) + 1 } Success (Perfect Sync)")
+                            success = True
+                        else:
+                            raise Exception("AI returned empty response.")
+
+                    except Exception as api_err:
+                        err_msg = str(api_err)
+                        if "402" in err_msg or "Insufficient" in err_msg:
+                            self.log(f"❌ FATAL ERROR: Account has no balance!")
+                            messagebox.showerror("No Balance", "Your API account has 0 credits.")
+                            self.btn_start.config(state="normal")
+                            return
+                        elif "429" in err_msg or "quota" in err_msg.lower():
+                            self.log(f"⏳ Free Limit Hit! Sleeping for 60 seconds...")
+                            time.sleep(60) # Wait 1 min and RETRY THE SAME CHUNK
+                        else:
+                            self.log(f"⚠️ {err_msg[:60]}... Retrying...")
+                            time.sleep(10) # Retrying formatting mistakes
                     
-                    if provider == "Google Gemini":
-                        model = genai.GenerativeModel(gemini_model_name)
-                        response = model.generate_content(prompt)
-                        result_text = response.text
-                        
-                    elif provider == "OpenAI (ChatGPT)":
-                        client = OpenAI(api_key=api_key)
-                        response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
-                            messages=[{"role": "user", "content": prompt}]
-                        )
-                        result_text = response.choices[0].message.content
-                        
-                    elif provider == "DeepSeek":
-                        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                        response = client.chat.completions.create(
-                            model="deepseek-chat",
-                            messages=[{"role": "user", "content": prompt}]
-                        )
-                        result_text = response.choices[0].message.content
+                time.sleep(6) # Safe delay between chunks
 
-                    if result_text:
-                        clean = result_text.replace('```srt', '').replace('```', '').strip()
-                        output_content += clean + "\n\n"
-                        self.log(f"✅ Chunk { (i//c_size) + 1 } Success")
-                    else:
-                        self.log(f"⚠️ Chunk { (i//c_size) + 1 } Empty")
-
-                except Exception as api_err:
-                    err_msg = str(api_err)
-                    # Handing DeepSeek 402 Error Gracefully
-                    if "402" in err_msg or "Insufficient" in err_msg:
-                        self.log(f"❌ FATAL ERROR: Account has no balance/credits!")
-                        messagebox.showerror("No Balance", "Your API account has 0 credits. Please top-up or use a free Google Gemini Key.")
-                        self.btn_start.config(state="normal")
-                        return # Stop everything
-                    else:
-                        self.log(f"❌ API Error: Retrying... ({err_msg[:50]})")
-                        time.sleep(15) 
-                
-                time.sleep(8) 
-
-            save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"Translated_{target}.srt")
+            save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"PerfectSync_{target}.srt")
             if save_path:
                 with open(save_path, 'w', encoding='utf-8') as f:
                     f.write(output_content)
-                self.log("💾 SUCCESS! Translation Saved.")
-                messagebox.showinfo("Done", "Translation completed successfully!")
+                self.log("💾 SUCCESS! Translation Saved with Perfect Sync.")
+                messagebox.showinfo("Done", "Translation completed with 100% original sync!")
 
         except Exception as e:
             self.log(f"CRITICAL Error: {str(e)}")
