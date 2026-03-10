@@ -10,7 +10,7 @@ import os
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v8 (Bulletproof Sync)")
+        self.root.title("Universal AI Subtitle Master v9 (Final Auto-Sync)")
         self.root.geometry("650x700")
         self.root.configure(bg="#1e272e")
 
@@ -36,7 +36,7 @@ class UniversalSubtitleApp:
         settings_frame.pack(pady=20)
         
         tk.Label(settings_frame, text="Chunk Size:", bg="#1e272e", fg="white").grid(row=0, column=0, padx=5)
-        self.chunk_var = tk.StringVar(value="20") # 20 is best for accuracy
+        self.chunk_var = tk.StringVar(value="30")
         ttk.Combobox(settings_frame, textvariable=self.chunk_var, values=["10", "20", "30", "40", "50"], width=5).grid(row=0, column=1, padx=5)
         
         tk.Label(settings_frame, text="Target Language:", bg="#1e272e", fg="white").grid(row=0, column=2, padx=15)
@@ -73,7 +73,6 @@ class UniversalSubtitleApp:
             with open(self.file_path, 'r', encoding='utf-8') as f:
                 data = f.read()
 
-            # Clean strictly
             blocks =[b.strip() for b in re.split(r'\n\s*\n', data.strip()) if b.strip()]
             c_size = int(self.chunk_var.get())
             target = self.lang_var.get()
@@ -81,8 +80,23 @@ class UniversalSubtitleApp:
 
             self.log(f"System: {provider}")
             
+            # --- PERFECT AUTO-DETECT LOGIC ---
+            gemini_model_name = None
             if provider == "Google Gemini":
+                self.log("Connecting to Google & Scanning for best model...")
                 genai.configure(api_key=api_key)
+                try:
+                    for m in genai.list_models():
+                        if 'generateContent' in m.supported_generation_methods:
+                            gemini_model_name = m.name
+                            if 'flash' in m.name.lower(): 
+                                break
+                    if gemini_model_name:
+                        self.log(f"Auto-selected model: {gemini_model_name}")
+                    else:
+                        raise Exception("No usable models found for this Key.")
+                except Exception as e:
+                    raise Exception(f"Invalid Google API Key: {e}")
 
             self.log(f"Total Blocks: {len(blocks)} | Chunks: {(len(blocks)//c_size)+1}")
 
@@ -90,7 +104,7 @@ class UniversalSubtitleApp:
                 chunk_blocks = blocks[i:i + c_size]
                 batch = "\n\n".join(chunk_blocks)
                 
-                # BULLETPROOF CHECK: Count the exact number of timestamps
+                # COUNT TIMESTAMPS FOR BULLETPROOF SYNC
                 expected_count = batch.count("-->")
                 
                 prompt = f"Translate the following SRT subtitles into natural {target}.\nCRITICAL RULES:\n1. Do not change the sequence numbers.\n2. Do not change the timestamps.\n3. Keep the exact same formatting.\n4. You MUST output exactly {expected_count} subtitles. Do not merge them.\n\n{batch}"
@@ -102,7 +116,7 @@ class UniversalSubtitleApp:
                         result_text = ""
                         
                         if provider == "Google Gemini":
-                            model = genai.GenerativeModel('gemini-pro') # Standard stable model
+                            model = genai.GenerativeModel(gemini_model_name) # USING AUTO-DETECTED MODEL HERE
                             response = model.generate_content(prompt)
                             result_text = response.text
                             
@@ -125,7 +139,6 @@ class UniversalSubtitleApp:
                         if result_text:
                             clean = result_text.replace('```srt', '').replace('```', '').strip()
                             
-                            # BULLETPROOF VALIDATION
                             actual_count = clean.count("-->")
                             if actual_count != expected_count:
                                 raise Exception(f"Format Error: AI merged lines! (Expected {expected_count}, Got {actual_count})")
@@ -143,14 +156,14 @@ class UniversalSubtitleApp:
                             messagebox.showerror("No Balance", "Your API account has 0 credits.")
                             self.btn_start.config(state="normal")
                             return
-                        elif "429" in err_msg or "quota" in err_msg.lower():
+                        elif "429" in err_msg or "quota" in err_msg.lower() or "exhausted" in err_msg.lower():
                             self.log(f"⏳ Free Limit Hit! Sleeping for 60 seconds...")
-                            time.sleep(60) # Wait 1 min and RETRY THE SAME CHUNK
+                            time.sleep(60) 
                         else:
                             self.log(f"⚠️ {err_msg[:60]}... Retrying...")
-                            time.sleep(10) # Retrying formatting mistakes
+                            time.sleep(10) 
                     
-                time.sleep(6) # Safe delay between chunks
+                time.sleep(6) 
 
             save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"PerfectSync_{target}.srt")
             if save_path:
