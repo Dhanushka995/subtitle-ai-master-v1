@@ -1,48 +1,63 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import google.generativeai as genai
+from openai import OpenAI
 import threading
 import time
 import re
 import os
 
-class SubtitleApp:
+class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("AI Subtitle Master Pro v3 (Stable)")
-        self.root.geometry("600x650")
-        self.root.configure(bg="#2c3e50")
+        self.root.title("Universal AI Subtitle Master v5")
+        self.root.geometry("650x700")
+        self.root.configure(bg="#1e272e")
 
-        tk.Label(root, text="AI SUBTITLE TRANSLATOR", bg="#2c3e50", fg="white", font=("Arial", 14, "bold")).pack(pady=20)
-        tk.Label(root, text="Gemini API Key:", bg="#2c3e50", fg="#bdc3c7").pack()
-        self.api_entry = tk.Entry(root, width=60, show="*", bg="#34495e", fg="white", borderwidth=0)
-        self.api_entry.pack(pady=5, ipady=5)
+        # Header
+        tk.Label(root, text="UNIVERSAL AI TRANSLATOR", bg="#1e272e", fg="#00d8d6", font=("Arial", 16, "bold")).pack(pady=15)
 
+        # AI Provider Selection
+        provider_frame = tk.Frame(root, bg="#1e272e")
+        provider_frame.pack(pady=5)
+        tk.Label(provider_frame, text="Select AI System:", bg="#1e272e", fg="white", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=10)
+        self.provider_var = tk.StringVar(value="Google Gemini")
+        self.provider_menu = ttk.Combobox(provider_frame, textvariable=self.provider_var, values=["Google Gemini", "OpenAI (ChatGPT)", "DeepSeek"], width=20, state="readonly")
+        self.provider_menu.pack(side=tk.LEFT)
+
+        # API Key Input
+        tk.Label(root, text="Enter API Key:", bg="#1e272e", fg="#d2dae2").pack(pady=(15, 0))
+        self.api_entry = tk.Entry(root, width=65, show="*", bg="#485460", fg="white", borderwidth=0)
+        self.api_entry.pack(pady=5, ipady=6)
+
+        # File Selection
         self.file_path = ""
-        tk.Button(root, text="Select English SRT File", command=self.open_file, bg="#2980b9", fg="white", width=25).pack(pady=15)
-        self.lbl_status_file = tk.Label(root, text="No file selected", bg="#2c3e50", fg="#95a5a6")
+        tk.Button(root, text="📂 Select English SRT File", command=self.open_file, bg="#0fb9b1", fg="white", font=("Arial", 10, "bold"), width=30).pack(pady=15)
+        self.lbl_status_file = tk.Label(root, text="No file selected", bg="#1e272e", fg="#808e9b")
         self.lbl_status_file.pack()
 
-        settings_frame = tk.Frame(root, bg="#2c3e50")
+        # Settings
+        settings_frame = tk.Frame(root, bg="#1e272e")
         settings_frame.pack(pady=20)
-        tk.Label(settings_frame, text="Chunk Size:", bg="#2c3e50", fg="white").grid(row=0, column=0, padx=5)
-        self.chunk_var = tk.StringVar(value="30")
-        self.chunk_menu = ttk.Combobox(settings_frame, textvariable=self.chunk_var, values=["10", "20", "30", "40"], width=5)
-        self.chunk_menu.grid(row=0, column=1, padx=5)
         
-        tk.Label(settings_frame, text="Language:", bg="#2c3e50", fg="white").grid(row=0, column=2, padx=5)
+        tk.Label(settings_frame, text="Chunk Size:", bg="#1e272e", fg="white").grid(row=0, column=0, padx=5)
+        self.chunk_var = tk.StringVar(value="30")
+        ttk.Combobox(settings_frame, textvariable=self.chunk_var, values=["10", "20", "30", "40", "50"], width=5).grid(row=0, column=1, padx=5)
+        
+        tk.Label(settings_frame, text="Target Language:", bg="#1e272e", fg="white").grid(row=0, column=2, padx=15)
         self.lang_var = tk.StringVar(value="Sinhala")
-        self.lang_menu = ttk.Combobox(settings_frame, textvariable=self.lang_var, values=["Sinhala", "Tamil", "Hindi"], width=10)
-        self.lang_menu.grid(row=0, column=3, padx=5)
+        ttk.Combobox(settings_frame, textvariable=self.lang_var, values=["Sinhala", "Tamil", "Hindi"], width=12).grid(row=0, column=3, padx=5)
 
-        self.log_box = tk.Text(root, height=12, width=70, bg="#1a1a1a", fg="#2ecc71", font=("Consolas", 9))
+        # Logs Box
+        self.log_box = tk.Text(root, height=10, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
         self.log_box.pack(pady=10, padx=20)
 
-        self.btn_start = tk.Button(root, text="START TRANSLATION", command=self.run_thread, bg="#27ae60", fg="white", font=("Arial", 11, "bold"), width=30, height=2)
+        # Start Button
+        self.btn_start = tk.Button(root, text="🚀 START TRANSLATION", command=self.run_thread, bg="#ff3f34", fg="white", font=("Arial", 12, "bold"), width=35, height=2)
         self.btn_start.pack(pady=10)
 
     def log(self, text):
-        self.log_box.insert(tk.END, text + "\n")
+        self.log_box.insert(tk.END, "> " + text + "\n")
         self.log_box.see(tk.END)
 
     def open_file(self):
@@ -51,18 +66,17 @@ class SubtitleApp:
             self.lbl_status_file.config(text=os.path.basename(self.file_path), fg="white")
 
     def run_thread(self):
-        if not self.file_path or not self.api_entry.get():
-            messagebox.showwarning("Input Error", "Enter API Key and select an SRT file.")
+        if not self.file_path or not self.api_entry.get().strip():
+            messagebox.showwarning("Input Error", "Please provide the API Key and select a file.")
             return
         self.btn_start.config(state="disabled")
         threading.Thread(target=self.start_logic, daemon=True).start()
 
     def start_logic(self):
+        provider = self.provider_var.get()
+        api_key = self.api_entry.get().strip()
+        
         try:
-            genai.configure(api_key=self.api_entry.get())
-            # FIXED: Using the most stable model name
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
             with open(self.file_path, 'r', encoding='utf-8') as f:
                 data = f.read()
 
@@ -71,33 +85,60 @@ class SubtitleApp:
             target = self.lang_var.get()
             output_content = ""
 
-            self.log(f"Process Started. Model: Gemini-1.5-Flash")
-            self.log(f"Total Chunks: {(len(blocks)//c_size)+1}")
+            self.log(f"System: {provider}")
+            self.log(f"Total Blocks to Translate: {(len(blocks)//c_size)+1}")
 
             for i in range(0, len(blocks), c_size):
                 batch = "\n\n".join(blocks[i:i + c_size])
-                prompt = f"Translate the following SRT subtitles to natural {target}. Preserve SRT numbering and timestamps. Return only the translated subtitles:\n\n{batch}"
+                prompt = f"Translate the following SRT subtitles into natural {target}. Preserve SRT numbering and timestamps exactly. Output ONLY the translated SRT text:\n\n{batch}"
                 
                 try:
-                    response = model.generate_content(prompt)
-                    if response.text:
-                        clean = response.text.replace('```srt', '').replace('```', '').strip()
+                    result_text = ""
+                    
+                    # --- AI ROUTING LOGIC ---
+                    if provider == "Google Gemini":
+                        genai.configure(api_key=api_key)
+                        model = genai.GenerativeModel('gemini-pro')
+                        response = model.generate_content(prompt)
+                        result_text = response.text
+                        
+                    elif provider == "OpenAI (ChatGPT)":
+                        client = OpenAI(api_key=api_key)
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[{"role": "user", "content": prompt}]
+                        )
+                        result_text = response.choices[0].message.content
+                        
+                    elif provider == "DeepSeek":
+                        # DeepSeek uses OpenAI compatible API
+                        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+                        response = client.chat.completions.create(
+                            model="deepseek-chat",
+                            messages=[{"role": "user", "content": prompt}]
+                        )
+                        result_text = response.choices[0].message.content
+
+                    # --- PROCESSING RESULT ---
+                    if result_text:
+                        clean = result_text.replace('```srt', '').replace('```', '').strip()
                         output_content += clean + "\n\n"
                         self.log(f"✅ Chunk { (i//c_size) + 1 } Success")
                     else:
-                        self.log(f"⚠️ Chunk { (i//c_size) + 1 } returned empty.")
-                except Exception as api_err:
-                    self.log(f"❌ API Error: {str(api_err)}")
-                    time.sleep(15) # Safety Wait
-                
-                time.sleep(10) # Essential Anti-429 Delay
+                        self.log(f"⚠️ Chunk { (i//c_size) + 1 } Empty")
 
-            save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"Final_{target}.srt")
+                except Exception as api_err:
+                    self.log(f"❌ API Error: Retrying... ({str(api_err)[:50]})")
+                    time.sleep(15) # Wait before retry
+                
+                time.sleep(8) # Essential delay to prevent rate limits
+
+            save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"Universal_{target}.srt")
             if save_path:
                 with open(save_path, 'w', encoding='utf-8') as f:
                     f.write(output_content)
-                self.log("💾 SUCCESS! File Saved.")
-                messagebox.showinfo("Done", "Translation completed and saved!")
+                self.log("💾 SUCCESS! Translation Saved.")
+                messagebox.showinfo("Done", "Translation completed successfully!")
 
         except Exception as e:
             self.log(f"CRITICAL Error: {str(e)}")
@@ -107,5 +148,5 @@ class SubtitleApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = SubtitleApp(root)
+    app = UniversalSubtitleApp(root)
     root.mainloop()
