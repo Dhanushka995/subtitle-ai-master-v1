@@ -11,8 +11,8 @@ import requests
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v19 (The Final Masterpiece)")
-        self.root.geometry("650x750")
+        self.root.title("Universal AI Subtitle Master v21 (Final Verified)")
+        self.root.geometry("650x800")
         self.root.configure(bg="#1e272e")
 
         # Header
@@ -28,7 +28,7 @@ class UniversalSubtitleApp:
         self.key_status_lbl = tk.Label(root, text="Waiting for API Key...", bg="#1e272e", fg="#808e9b", font=("Arial", 9, "bold"))
         self.key_status_lbl.pack(pady=2)
 
-        # Advanced Settings Frame (Auto-filled by Auto-Detect)
+        # Advanced Settings Frame
         self.adv_frame = tk.Frame(root, bg="#2f3640", padx=10, pady=10)
         self.adv_frame.pack(pady=10, fill="x", padx=40)
         
@@ -58,14 +58,19 @@ class UniversalSubtitleApp:
         self.lang_var = tk.StringVar(value="Sinhala")
         ttk.Combobox(settings_frame, textvariable=self.lang_var, values=["Sinhala", "Tamil", "Hindi"], width=10).grid(row=0, column=3, padx=5)
 
+        # RATE LIMIT TOGGLE
+        self.delay_enabled = tk.BooleanVar(value=True)
+        self.delay_check = tk.Checkbutton(settings_frame, text="Enable 15s Rate Limit Delay (For Free Keys)", variable=self.delay_enabled, bg="#1e272e", fg="#0be881", selectcolor="#1e272e", activebackground="#1e272e", activeforeground="white")
+        self.delay_check.grid(row=1, column=0, columnspan=4, pady=10)
+
         # Resume Feature
-        tk.Label(settings_frame, text="Start from Chunk:", bg="#1e272e", fg="#ff9f43").grid(row=1, column=0, columnspan=2, pady=10, sticky="e")
+        tk.Label(settings_frame, text="Start from Chunk:", bg="#1e272e", fg="#ff9f43").grid(row=2, column=0, columnspan=2, pady=5, sticky="e")
         self.resume_var = tk.StringVar(value="1")
-        tk.Entry(settings_frame, textvariable=self.resume_var, width=6, bg="#ff9f43", fg="black", font=("Arial", 10, "bold")).grid(row=1, column=2, sticky="w", pady=10)
-        tk.Label(settings_frame, text="(Use >1 to resume partial work)", bg="#1e272e", fg="#808e9b", font=("Arial", 8)).grid(row=1, column=3, sticky="w")
+        tk.Entry(settings_frame, textvariable=self.resume_var, width=6, bg="#ff9f43", fg="black", font=("Arial", 10, "bold")).grid(row=2, column=2, sticky="w", pady=5)
+        tk.Label(settings_frame, text="(Use >1 to resume)", bg="#1e272e", fg="#808e9b", font=("Arial", 8)).grid(row=2, column=3, sticky="w")
 
         # Logs
-        self.log_box = tk.Text(root, height=12, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
+        self.log_box = tk.Text(root, height=10, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
         self.log_box.pack(pady=5, padx=20)
 
         # Start Button
@@ -97,6 +102,11 @@ class UniversalSubtitleApp:
             self.key_status_lbl.config(text="✅ Detected: Groq API", fg="#0be881")
             self.base_url_var.set("https://api.groq.com/openai/v1")
             self.model_var.set("llama-3.3-70b-versatile")
+        elif key.startswith("sk-"):
+            self.provider_type = "OpenAI_Compatible"
+            self.key_status_lbl.config(text="✅ Detected: OpenAI / DeepSeek", fg="#0be881")
+            if not self.base_url_var.get(): self.base_url_var.set("https://api.openai.com/v1")
+            if not self.model_var.get(): self.model_var.set("gpt-3.5-turbo")
         else:
             self.provider_type = "OpenAI_Compatible"
             self.key_status_lbl.config(text="⚠️ Unknown Key: Manual Setup Required", fg="#ffdd59")
@@ -150,7 +160,7 @@ class UniversalSubtitleApp:
                     return
                 open(save_path, 'w', encoding='utf-8').close()
             else:
-                save_path = filedialog.askopenfilename(title="Select your partially translated SRT file to resume", filetypes=[("SRT files", "*.srt")])
+                save_path = filedialog.askopenfilename(title="Select partially translated SRT file to resume", filetypes=[("SRT files", "*.srt")])
                 if not save_path:
                     self.btn_start.config(state="normal")
                     return
@@ -162,11 +172,9 @@ class UniversalSubtitleApp:
             c_size = int(self.chunk_var.get())
             total_chunks = (len(blocks) // c_size) + (1 if len(blocks) % c_size > 0 else 0)
             
-            self.log(f"Total Blocks: {len(blocks)} | Total Chunks: {total_chunks}")
-            
+            # LOGGING MODEL INFO FIRST
             gemini_model_to_use = None
             if self.provider_type == "Gemini":
-                self.log("Scanning Google API key for best model...")
                 genai.configure(api_key=api_key)
                 for m in genai.list_models():
                     if 'generateContent' in m.supported_generation_methods and 'flash' in m.name.lower(): 
@@ -176,6 +184,9 @@ class UniversalSubtitleApp:
                 self.log(f"Using Google Model: {gemini_model_to_use}")
             else:
                 self.log(f"Using API -> Model: {model_name}")
+
+            # LOGGING TOTAL INFO SECOND
+            self.log(f"Total Blocks: {len(blocks)} | Total Chunks: {total_chunks}")
 
             for i in range((start_chunk-1)*c_size, len(blocks), c_size):
                 chunk_blocks = blocks[i:i + c_size]
@@ -216,8 +227,9 @@ Subtitles to translate:
 
                         if result_text:
                             clean = result_text.replace('```srt', '').replace('```', '').strip()
-                            actual_count = clean.count("-->")
                             
+                            # BULLETPROOF VALIDATION
+                            actual_count = clean.count("-->")
                             if actual_count != expected_count:
                                 raise Exception(f"Format Error: AI merged lines! (Expected {expected_count}, Got {actual_count})")
                             
@@ -235,7 +247,8 @@ Subtitles to translate:
                             self.log(f"⚠️ Error: {err_msg[:50]}... Retrying in 15s")
                             time.sleep(15)
                 
-                if i + c_size < len(blocks):
+                # CONDITIONAL DELAY
+                if self.delay_enabled.get() and i + c_size < len(blocks):
                     self.log("⏳ Waiting for 15 seconds to prevent Rate Limits...")
                     time.sleep(15)
 
