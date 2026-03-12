@@ -6,17 +6,18 @@ import threading
 import time
 import re
 import os
+import requests
 
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v13 (OpenRouter Fixed)")
+        self.root.title("Universal AI Subtitle Master v15 (Auto-Pilot)")
         self.root.geometry("650x750")
         self.root.configure(bg="#1e272e")
 
         tk.Label(root, text="UNIVERSAL AI TRANSLATOR", bg="#1e272e", fg="#00d8d6", font=("Arial", 16, "bold")).pack(pady=15)
 
-        tk.Label(root, text="Paste your API Key here (Auto-Detects Provider):", bg="#1e272e", fg="#d2dae2", font=("Arial", 10)).pack(pady=(5, 0))
+        tk.Label(root, text="Paste your API Key here:", bg="#1e272e", fg="#d2dae2").pack(pady=(5, 0))
         self.api_var = tk.StringVar()
         self.api_var.trace_add("write", self.on_key_change)
         self.api_entry = tk.Entry(root, textvariable=self.api_var, width=65, show="*", bg="#485460", fg="white", borderwidth=0, font=("Consolas", 10))
@@ -25,19 +26,19 @@ class UniversalSubtitleApp:
         self.key_status_lbl = tk.Label(root, text="Waiting for API Key...", bg="#1e272e", fg="#808e9b", font=("Arial", 9, "bold"))
         self.key_status_lbl.pack(pady=2)
 
+        # Settings Frame
         self.adv_frame = tk.Frame(root, bg="#2f3640", padx=10, pady=10)
         self.adv_frame.pack(pady=10, fill="x", padx=40)
         
-        tk.Label(self.adv_frame, text="Base URL:", bg="#2f3640", fg="white").grid(row=0, column=0, sticky="w", pady=2)
+        tk.Label(self.adv_frame, text="Base URL:", bg="#2f3640", fg="white").grid(row=0, column=0, sticky="w")
         self.base_url_var = tk.StringVar()
-        self.base_url_entry = tk.Entry(self.adv_frame, textvariable=self.base_url_var, width=50, bg="#1e272e", fg="white")
-        self.base_url_entry.grid(row=0, column=1, padx=10, pady=2)
+        tk.Entry(self.adv_frame, textvariable=self.base_url_var, width=50, bg="#1e272e", fg="white").grid(row=0, column=1, padx=10, pady=2)
 
-        tk.Label(self.adv_frame, text="Model Name:", bg="#2f3640", fg="white").grid(row=1, column=0, sticky="w", pady=2)
+        tk.Label(self.adv_frame, text="Model Name:", bg="#2f3640", fg="white").grid(row=1, column=0, sticky="w")
         self.model_var = tk.StringVar()
-        self.model_entry = tk.Entry(self.adv_frame, textvariable=self.model_var, width=50, bg="#1e272e", fg="white")
-        self.model_entry.grid(row=1, column=1, padx=10, pady=2)
+        tk.Entry(self.adv_frame, textvariable=self.model_var, width=50, bg="#1e272e", fg="white").grid(row=1, column=1, padx=10, pady=2)
 
+        # File Selection
         self.file_path = ""
         tk.Button(root, text="📂 Select English SRT File", command=self.open_file, bg="#0fb9b1", fg="white", font=("Arial", 10, "bold"), width=30).pack(pady=10)
         self.lbl_status_file = tk.Label(root, text="No file selected", bg="#1e272e", fg="#808e9b")
@@ -58,7 +59,7 @@ class UniversalSubtitleApp:
         self.resume_var = tk.StringVar(value="1")
         tk.Entry(settings_frame, textvariable=self.resume_var, width=6, bg="#ff9f43", fg="black", font=("Arial", 10, "bold")).grid(row=1, column=2, sticky="w", pady=10)
 
-        self.log_box = tk.Text(root, height=10, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
+        self.log_box = tk.Text(root, height=12, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
         self.log_box.pack(pady=5, padx=20)
 
         self.btn_start = tk.Button(root, text="🚀 START TRANSLATION", command=self.run_thread, bg="#ff3f34", fg="white", font=("Arial", 12, "bold"), width=35, height=2)
@@ -66,38 +67,59 @@ class UniversalSubtitleApp:
 
         self.provider_type = "Unknown"
 
+    def log(self, text):
+        self.log_box.insert(tk.END, "> " + text + "\n")
+        self.log_box.see(tk.END)
+
     def on_key_change(self, *args):
         key = self.api_var.get().strip()
-        if not key:
-            self.key_status_lbl.config(text="Waiting for API Key...", fg="#808e9b")
-            return
+        if not key: return
 
         if key.startswith("AIza"):
             self.provider_type = "Gemini"
             self.key_status_lbl.config(text="✅ Detected: Google Gemini", fg="#0be881")
             self.base_url_var.set("N/A")
             self.model_var.set("Auto-Detect")
-            
+        elif key.startswith("sk-or-"):
+            self.provider_type = "OpenRouter"
+            self.key_status_lbl.config(text="⏳ OpenRouter: Fetching best FREE model...", fg="#ffdd59")
+            self.base_url_var.set("https://openrouter.ai/api/v1")
+            # Fetch free models in a background thread
+            threading.Thread(target=self.fetch_openrouter_free_model, args=(key,), daemon=True).start()
         elif key.startswith("gsk_"):
             self.provider_type = "OpenAI_Compatible"
             self.key_status_lbl.config(text="✅ Detected: Groq API", fg="#0be881")
             self.base_url_var.set("https://api.groq.com/openai/v1")
             self.model_var.set("llama-3.3-70b-versatile")
-            
-        elif key.startswith("sk-or-"):
-            self.provider_type = "OpenRouter"
-            self.key_status_lbl.config(text="✅ Detected: OpenRouter API", fg="#0be881")
-            self.base_url_var.set("https://openrouter.ai/api/v1")
-            # FIXED: Using a more stable free model name
-            self.model_var.set("google/gemini-2.0-flash-lite-preview-02-05:free")
-            
         else:
             self.provider_type = "OpenAI_Compatible"
             self.key_status_lbl.config(text="⚠️ Unknown Key: Manual Setup Required", fg="#ffdd59")
 
-    def log(self, text):
-        self.log_box.insert(tk.END, "> " + text + "\n")
-        self.log_box.see(tk.END)
+    def fetch_openrouter_free_model(self, api_key):
+        try:
+            response = requests.get("https://openrouter.ai/api/v1/models")
+            if response.status_code == 200:
+                models = response.json().get('data', [])
+                # Filter models where price is 0
+                free_models = [m['id'] for m in models if float(m.get('pricing', {}).get('prompt', 1)) == 0]
+                
+                # Prioritize Gemini, then Llama
+                best_model = ""
+                for m in free_models:
+                    if "gemini" in m.lower():
+                        best_model = m
+                        break
+                if not best_model and free_models:
+                    best_model = free_models[0]
+                
+                if best_model:
+                    self.model_var.set(best_model)
+                    self.key_status_lbl.config(text=f"✅ OpenRouter: Auto-selected {best_model}", fg="#0be881")
+                else:
+                    self.model_var.set("google/gemini-2.0-flash-lite-preview-02-05:free")
+                    self.key_status_lbl.config(text="⚠️ No free models found, using default.", fg="#ffdd59")
+        except:
+            self.model_var.set("google/gemini-2.0-flash-lite-preview-02-05:free")
 
     def open_file(self):
         self.file_path = filedialog.askopenfilename(filetypes=[("SRT files", "*.srt")])
@@ -140,8 +162,7 @@ class UniversalSubtitleApp:
             
             if self.provider_type == "Gemini":
                 genai.configure(api_key=api_key)
-                gemini_model_name = 'gemini-1.5-flash'
-                self.log(f"Using Google Model: {gemini_model_name}")
+                model_to_use = 'gemini-1.5-flash'
             else:
                 self.log(f"Using API -> Model: {model_name}")
 
@@ -157,18 +178,14 @@ class UniversalSubtitleApp:
                     try:
                         result_text = ""
                         if self.provider_type == "Gemini":
-                            model = genai.GenerativeModel(gemini_model_name)
+                            model = genai.GenerativeModel(model_to_use)
                             response = model.generate_content(prompt)
                             result_text = response.text
                         else:
-                            # FIXED: Added required headers for OpenRouter Free Tier
                             client = OpenAI(
                                 api_key=api_key, 
                                 base_url=base_url,
-                                default_headers={
-                                    "HTTP-Referer": "https://github.com/Dhanushka995/subtitle-ai-master",
-                                    "X-Title": "Subtitle AI Master"
-                                }
+                                default_headers={"HTTP-Referer": "https://github.com/Dhanushka995", "X-Title": "SubMaster"}
                             )
                             response = client.chat.completions.create(
                                 model=model_name,
@@ -184,7 +201,7 @@ class UniversalSubtitleApp:
                             success = True
                         
                     except Exception as api_err:
-                        self.log(f"⚠️ Error: {str(api_err)[:50]}... Retrying in 15s")
+                        self.log(f"❌ Error: {str(api_err)[:60]}... Retrying in 15s")
                         time.sleep(15)
                 
                 time.sleep(10)
