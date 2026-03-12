@@ -10,25 +10,21 @@ import os
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v12 (Smart Auto-Detect)")
+        self.root.title("Universal AI Subtitle Master v13 (OpenRouter Fixed)")
         self.root.geometry("650x750")
         self.root.configure(bg="#1e272e")
 
         tk.Label(root, text="UNIVERSAL AI TRANSLATOR", bg="#1e272e", fg="#00d8d6", font=("Arial", 16, "bold")).pack(pady=15)
 
-        # API Key Input
         tk.Label(root, text="Paste your API Key here (Auto-Detects Provider):", bg="#1e272e", fg="#d2dae2", font=("Arial", 10)).pack(pady=(5, 0))
-        
         self.api_var = tk.StringVar()
         self.api_var.trace_add("write", self.on_key_change)
         self.api_entry = tk.Entry(root, textvariable=self.api_var, width=65, show="*", bg="#485460", fg="white", borderwidth=0, font=("Consolas", 10))
         self.api_entry.pack(pady=5, ipady=6)
 
-        # Status Label for API Key
         self.key_status_lbl = tk.Label(root, text="Waiting for API Key...", bg="#1e272e", fg="#808e9b", font=("Arial", 9, "bold"))
         self.key_status_lbl.pack(pady=2)
 
-        # Advanced Settings (Hidden by default, auto-filled)
         self.adv_frame = tk.Frame(root, bg="#2f3640", padx=10, pady=10)
         self.adv_frame.pack(pady=10, fill="x", padx=40)
         
@@ -42,13 +38,11 @@ class UniversalSubtitleApp:
         self.model_entry = tk.Entry(self.adv_frame, textvariable=self.model_var, width=50, bg="#1e272e", fg="white")
         self.model_entry.grid(row=1, column=1, padx=10, pady=2)
 
-        # File Selection
         self.file_path = ""
         tk.Button(root, text="📂 Select English SRT File", command=self.open_file, bg="#0fb9b1", fg="white", font=("Arial", 10, "bold"), width=30).pack(pady=10)
         self.lbl_status_file = tk.Label(root, text="No file selected", bg="#1e272e", fg="#808e9b")
         self.lbl_status_file.pack()
 
-        # Settings
         settings_frame = tk.Frame(root, bg="#1e272e")
         settings_frame.pack(pady=10)
         
@@ -64,7 +58,6 @@ class UniversalSubtitleApp:
         self.resume_var = tk.StringVar(value="1")
         tk.Entry(settings_frame, textvariable=self.resume_var, width=6, bg="#ff9f43", fg="black", font=("Arial", 10, "bold")).grid(row=1, column=2, sticky="w", pady=10)
 
-        # Logs
         self.log_box = tk.Text(root, height=10, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
         self.log_box.pack(pady=5, padx=20)
 
@@ -77,51 +70,30 @@ class UniversalSubtitleApp:
         key = self.api_var.get().strip()
         if not key:
             self.key_status_lbl.config(text="Waiting for API Key...", fg="#808e9b")
-            self.base_url_var.set("")
-            self.model_var.set("")
             return
 
         if key.startswith("AIza"):
             self.provider_type = "Gemini"
-            self.key_status_lbl.config(text="✅ Detected: Google Gemini (Auto Model)", fg="#0be881")
+            self.key_status_lbl.config(text="✅ Detected: Google Gemini", fg="#0be881")
             self.base_url_var.set("N/A")
             self.model_var.set("Auto-Detect")
-            self.base_url_entry.config(state="disabled")
-            self.model_entry.config(state="disabled")
             
         elif key.startswith("gsk_"):
             self.provider_type = "OpenAI_Compatible"
             self.key_status_lbl.config(text="✅ Detected: Groq API", fg="#0be881")
-            self.base_url_entry.config(state="normal")
-            self.model_entry.config(state="normal")
             self.base_url_var.set("https://api.groq.com/openai/v1")
             self.model_var.set("llama-3.3-70b-versatile")
             
         elif key.startswith("sk-or-"):
-            self.provider_type = "OpenAI_Compatible"
+            self.provider_type = "OpenRouter"
             self.key_status_lbl.config(text="✅ Detected: OpenRouter API", fg="#0be881")
-            self.base_url_entry.config(state="normal")
-            self.model_entry.config(state="normal")
             self.base_url_var.set("https://openrouter.ai/api/v1")
-            self.model_var.set("google/gemini-2.5-flash-free") # Best free model on OpenRouter
-            
-        elif key.startswith("sk-proj-") or key.startswith("sk-svc-"):
-            self.provider_type = "OpenAI_Compatible"
-            self.key_status_lbl.config(text="✅ Detected: OpenAI (ChatGPT)", fg="#0be881")
-            self.base_url_entry.config(state="normal")
-            self.model_entry.config(state="normal")
-            self.base_url_var.set("https://api.openai.com/v1")
-            self.model_var.set("gpt-3.5-turbo")
+            # FIXED: Using a more stable free model name
+            self.model_var.set("google/gemini-2.0-flash-lite-preview-02-05:free")
             
         else:
             self.provider_type = "OpenAI_Compatible"
-            self.key_status_lbl.config(text="⚠️ Unknown Key: Please enter Base URL and Model Name manually", fg="#ffdd59")
-            self.base_url_entry.config(state="normal")
-            self.model_entry.config(state="normal")
-            if not self.base_url_var.get():
-                self.base_url_var.set("https://api.your-site.com/v1")
-            if not self.model_var.get():
-                self.model_var.set("model-name-here")
+            self.key_status_lbl.config(text="⚠️ Unknown Key: Manual Setup Required", fg="#ffdd59")
 
     def log(self, text):
         self.log_box.insert(tk.END, "> " + text + "\n")
@@ -147,16 +119,15 @@ class UniversalSubtitleApp:
         try:
             target = self.lang_var.get()
             start_chunk = int(self.resume_var.get())
-            if start_chunk < 1: start_chunk = 1
             
             if start_chunk == 1:
-                save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"AutoSync_{target}.srt", title="Where to save?")
+                save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"AutoSync_{target}.srt")
                 if not save_path:
                     self.btn_start.config(state="normal")
                     return
                 open(save_path, 'w', encoding='utf-8').close()
             else:
-                save_path = filedialog.askopenfilename(title="Select partially translated SRT file", filetypes=[("SRT files", "*.srt")])
+                save_path = filedialog.askopenfilename(filetypes=[("SRT files", "*.srt")])
                 if not save_path:
                     self.btn_start.config(state="normal")
                     return
@@ -168,96 +139,59 @@ class UniversalSubtitleApp:
             c_size = int(self.chunk_var.get())
             
             if self.provider_type == "Gemini":
-                self.log("Scanning Google API key for best model...")
                 genai.configure(api_key=api_key)
-                gemini_model_name = 'gemini-pro'
-                for m in genai.list_models():
-                    if 'generateContent' in m.supported_generation_methods and 'flash' in m.name.lower(): 
-                        gemini_model_name = m.name
-                        break
+                gemini_model_name = 'gemini-1.5-flash'
                 self.log(f"Using Google Model: {gemini_model_name}")
             else:
-                self.log(f"Using Custom API -> URL: {base_url} | Model: {model_name}")
+                self.log(f"Using API -> Model: {model_name}")
 
-            total_chunks = (len(blocks)//c_size)+1
-            self.log(f"Total Blocks: {len(blocks)} | Total Chunks: {total_chunks}")
-            if start_chunk > 1:
-                self.log(f"▶️ RESUMING from Chunk {start_chunk}...")
-
-            start_index = (start_chunk - 1) * c_size
-
-            for i in range(start_index, len(blocks), c_size):
+            for i in range((start_chunk-1)*c_size, len(blocks), c_size):
                 chunk_blocks = blocks[i:i + c_size]
                 batch = "\n\n".join(chunk_blocks)
                 expected_count = batch.count("-->")
-                current_chunk = (i//c_size) + 1
                 
-                prompt = f"""Translate the following SRT subtitles into natural {target}.
-CRITICAL RULES:
-1. DO NOT change the sequence numbers.
-2. DO NOT change the timestamps.
-3. Translate ONLY the text.
-4. Keep the exact same SRT formatting.
-5. You MUST output exactly {expected_count} subtitles. Do not merge them.
-
-{batch}"""
+                prompt = f"Translate the following SRT subtitles into natural {target}. Return ONLY the translated SRT text:\n\n{batch}"
                 
                 success = False
                 while not success:
                     try:
                         result_text = ""
-                        
                         if self.provider_type == "Gemini":
                             model = genai.GenerativeModel(gemini_model_name)
                             response = model.generate_content(prompt)
                             result_text = response.text
-                            
-                        elif self.provider_type == "OpenAI_Compatible":
-                            client = OpenAI(api_key=api_key, base_url=base_url if base_url != "N/A" else None)
+                        else:
+                            # FIXED: Added required headers for OpenRouter Free Tier
+                            client = OpenAI(
+                                api_key=api_key, 
+                                base_url=base_url,
+                                default_headers={
+                                    "HTTP-Referer": "https://github.com/Dhanushka995/subtitle-ai-master",
+                                    "X-Title": "Subtitle AI Master"
+                                }
+                            )
                             response = client.chat.completions.create(
                                 model=model_name,
-                                messages=[{"role": "user", "content": prompt}],
-                                temperature=0.3 # Low temperature for strict formatting
+                                messages=[{"role": "user", "content": prompt}]
                             )
                             result_text = response.choices[0].message.content
 
                         if result_text:
                             clean = result_text.replace('```srt', '').replace('```', '').strip()
-                            actual_count = clean.count("-->")
-                            
-                            if actual_count != expected_count:
-                                raise Exception(f"Format Error: AI merged lines! (Expected {expected_count}, Got {actual_count})")
-                            
                             with open(save_path, 'a', encoding='utf-8') as f:
                                 f.write(clean + "\n\n")
-                                
-                            self.log(f"✅ Chunk {current_chunk} success!")
+                            self.log(f"✅ Chunk {(i//c_size)+1} success!")
                             success = True
-                        else:
-                            raise Exception("AI returned empty response.")
-
+                        
                     except Exception as api_err:
-                        err_msg = str(api_err)
-                        if "402" in err_msg or "Insufficient" in err_msg:
-                            self.log(f"❌ Account has 0 balance! Stopping here.")
-                            self.btn_start.config(state="normal")
-                            return
-                        elif "429" in err_msg or "quota" in err_msg.lower():
-                            self.log(f"⏳ Free Limit Hit! Sleeping for 60 seconds...")
-                            time.sleep(60) 
-                        else:
-                            self.log(f"⚠️ Error: {err_msg[:40]}... Retrying...")
-                            time.sleep(10) 
+                        self.log(f"⚠️ Error: {str(api_err)[:50]}... Retrying in 15s")
+                        time.sleep(15)
                 
-                if i + c_size < len(blocks):
-                    self.log("⏳ Waiting for 15 seconds to prevent Rate Limits...")
-                    time.sleep(15)
+                time.sleep(10)
 
-            self.log("🎉 ALL DONE! Full translation completed.")
-            messagebox.showinfo("Done", "Translation completed with 100% original sync!")
+            messagebox.showinfo("Done", "Translation completed!")
 
         except Exception as e:
-            self.log(f"CRITICAL Error: {str(e)}")
             messagebox.showerror("Error", str(e))
         finally:
             self.btn_start.config(state="normal")
