@@ -14,7 +14,7 @@ CONFIG_FILE = "sub_master_config.json"
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v22 (Ultimate Control)")
+        self.root.title("Universal AI Subtitle Master v24 (Ultimate Auto-Pilot)")
         self.root.geometry("650x850")
         self.root.configure(bg="#1e272e")
 
@@ -23,10 +23,10 @@ class UniversalSubtitleApp:
         self.provider_type = "Unknown"
         self.file_path = ""
 
-        # --- UI ELEMENTS (Preserved from v21) ---
+        # --- UI ELEMENTS ---
         tk.Label(root, text="UNIVERSAL AI TRANSLATOR", bg="#1e272e", fg="#00d8d6", font=("Arial", 16, "bold")).pack(pady=15)
 
-        tk.Label(root, text="Paste your API Key here (Auto-Detects Provider):", bg="#1e272e", fg="#d2dae2").pack(pady=(5, 0))
+        tk.Label(root, text="Paste your API Key here (Auto-Detects Provider & Best Model):", bg="#1e272e", fg="#d2dae2").pack(pady=(5, 0))
         self.api_var = tk.StringVar()
         self.api_var.trace_add("write", self.on_key_change)
         self.api_entry = tk.Entry(root, textvariable=self.api_var, width=65, show="*", bg="#485460", fg="white", borderwidth=0, font=("Consolas", 10))
@@ -63,17 +63,17 @@ class UniversalSubtitleApp:
         ttk.Combobox(settings_frame, textvariable=self.lang_var, values=["Sinhala", "Tamil", "Hindi"], width=10).grid(row=0, column=3, padx=5)
 
         self.delay_enabled = tk.BooleanVar(value=True)
-        tk.Checkbutton(settings_frame, text="Enable 15s Rate Limit Delay (For Free Keys)", variable=self.delay_enabled, bg="#1e272e", fg="#0be881", selectcolor="#1e272e", activebackground="#1e272e", activeforeground="white").grid(row=1, column=0, columnspan=4, pady=10)
+        tk.Checkbutton(settings_frame, text="Enable 15s Rate Limit Delay (Safe Mode)", variable=self.delay_enabled, bg="#1e272e", fg="#0be881", selectcolor="#1e272e", activebackground="#1e272e", activeforeground="white").grid(row=1, column=0, columnspan=4, pady=10)
 
         tk.Label(settings_frame, text="Start from Chunk:", bg="#1e272e", fg="#ff9f43").grid(row=2, column=0, columnspan=2, pady=5, sticky="e")
         self.resume_var = tk.StringVar(value="1")
         tk.Entry(settings_frame, textvariable=self.resume_var, width=6, bg="#ff9f43", fg="black", font=("Arial", 10, "bold")).grid(row=2, column=2, sticky="w", pady=5)
-        tk.Label(settings_frame, text="(Use >1 to resume)", bg="#1e272e", fg="#808e9b", font=("Arial", 8)).grid(row=2, column=3, sticky="w")
+        tk.Label(settings_frame, text="(Leave 1 for new file)", bg="#1e272e", fg="#808e9b", font=("Arial", 8)).grid(row=2, column=3, sticky="w")
 
         self.log_box = tk.Text(root, height=10, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
         self.log_box.pack(pady=5, padx=20)
 
-        # --- NEW CONTROL BUTTONS (START, STOP, RESET) ---
+        # --- CONTROL BUTTONS ---
         btn_frame = tk.Frame(root, bg="#1e272e")
         btn_frame.pack(pady=15)
 
@@ -86,7 +86,6 @@ class UniversalSubtitleApp:
         self.btn_reset = tk.Button(btn_frame, text="Reset", command=self.reset_all, bg="#d63031", fg="white", font=("Arial", 12, "bold"), width=15, height=2)
         self.btn_reset.grid(row=0, column=2, padx=10)
 
-        # Load saved settings on startup
         self.load_settings()
 
     # --- SETTINGS MANAGEMENT ---
@@ -131,38 +130,65 @@ class UniversalSubtitleApp:
             self.provider_type = "OpenRouter"
             self.key_status_lbl.config(text="⏳ OpenRouter: Fetching best FREE model...", fg="#ffdd59")
             self.base_url_var.set("https://openrouter.ai/api/v1")
-            threading.Thread(target=self.fetch_openrouter_free_model, args=(key,), daemon=True).start()
+            threading.Thread(target=self.fetch_best_model, args=(key, "https://openrouter.ai/api/v1", True), daemon=True).start()
+        elif key.startswith("nvapi-"):
+            self.provider_type = "NVIDIA"
+            self.key_status_lbl.config(text="⏳ NVIDIA: Fetching best model...", fg="#ffdd59")
+            self.base_url_var.set("https://integrate.api.nvidia.com/v1")
+            threading.Thread(target=self.fetch_best_model, args=(key, "https://integrate.api.nvidia.com/v1", False), daemon=True).start()
         elif key.startswith("gsk_"):
-            self.provider_type = "OpenAI_Compatible"
-            self.key_status_lbl.config(text="✅ Detected: Groq API", fg="#0be881")
+            self.provider_type = "Groq"
+            self.key_status_lbl.config(text="⏳ Groq: Fetching best model...", fg="#ffdd59")
             self.base_url_var.set("https://api.groq.com/openai/v1")
-            self.model_var.set("llama-3.3-70b-versatile")
+            threading.Thread(target=self.fetch_best_model, args=(key, "https://api.groq.com/openai/v1", False), daemon=True).start()
         elif key.startswith("github_pat_") or key.startswith("ghp_"):
-            self.provider_type = "OpenAI_Compatible"
-            self.key_status_lbl.config(text="✅ Detected: GitHub Models API", fg="#0be881")
+            self.provider_type = "GitHub"
+            self.key_status_lbl.config(text="⏳ GitHub: Fetching best model...", fg="#ffdd59")
             self.base_url_var.set("https://models.inference.ai.azure.com")
-            self.model_var.set("gpt-4o-mini")
+            threading.Thread(target=self.fetch_best_model, args=(key, "https://models.inference.ai.azure.com", False), daemon=True).start()
         else:
             self.provider_type = "OpenAI_Compatible"
             self.key_status_lbl.config(text="⚠️ Unknown Key: Please enter Base URL & Model manually", fg="#ffdd59")
 
-    def fetch_openrouter_free_model(self, api_key):
+    # --- SMART AUTO-SELECTION LOGIC ---
+    def fetch_best_model(self, api_key, base_url, is_openrouter=False):
         try:
-            response = requests.get("https://openrouter.ai/api/v1/models")
+            headers = {"Authorization": f"Bearer {api_key}"}
+            response = requests.get(f"{base_url}/models", headers=headers, timeout=10)
+            
             if response.status_code == 200:
-                models = response.json().get('data', [])
-                free_models = [m['id'] for m in models if float(m.get('pricing', {}).get('prompt', 1)) == 0]
+                models_data = response.json().get('data', [])
+                
+                # If OpenRouter, filter only FREE models first
+                if is_openrouter:
+                    available_models = [m['id'] for m in models_data if float(m.get('pricing', {}).get('prompt', 1)) == 0]
+                else:
+                    available_models = [m['id'] for m in models_data]
+
+                # PRIORITY LIST FOR SINHALA
+                priorities = ["gemini", "deepseek", "qwen", "gpt-4", "llama"]
                 best_model = ""
-                for m in free_models:
-                    if "gemini" in m.lower():
-                        best_model = m
-                        break
-                if not best_model and free_models: best_model = free_models[0]
+
+                for priority in priorities:
+                    for m in available_models:
+                        if priority in m.lower():
+                            best_model = m
+                            break # Found the best in this priority level
+                    if best_model:
+                        break # Stop searching if a high priority model is found
+
                 if best_model:
                     self.model_var.set(best_model)
-                    self.key_status_lbl.config(text=f"✅ OpenRouter: Auto-selected {best_model}", fg="#0be881")
-        except:
-            self.model_var.set("google/gemini-2.0-flash-lite-preview-02-05:free")
+                    self.key_status_lbl.config(text=f"✅ Auto-selected: {best_model}", fg="#0be881")
+                else:
+                    # Fallback if priority models not found
+                    fallback = available_models[0] if available_models else "manual-input-required"
+                    self.model_var.set(fallback)
+                    self.key_status_lbl.config(text=f"⚠️ Selected fallback: {fallback}", fg="#ffdd59")
+            else:
+                self.key_status_lbl.config(text="❌ Failed to fetch models. Enter manually.", fg="#ff7675")
+        except Exception as e:
+            self.key_status_lbl.config(text="❌ Network error. Enter manually.", fg="#ff7675")
 
     def open_file(self):
         self.file_path = filedialog.askopenfilename(filetypes=[("SRT files", "*.srt")])
@@ -182,7 +208,7 @@ class UniversalSubtitleApp:
         self.resume_var.set("1")
         self.log_box.delete('1.0', tk.END)
         self.key_status_lbl.config(text="Waiting for API Key...", fg="#808e9b")
-        if os.path.exists(CONFIG_FILE): os.remove(CONFIG_FILE) # Clear saved settings
+        if os.path.exists(CONFIG_FILE): os.remove(CONFIG_FILE)
 
     def stop_process(self):
         if self.is_running:
@@ -195,7 +221,7 @@ class UniversalSubtitleApp:
             messagebox.showwarning("Input Error", "Please provide the API Key and select a file.")
             return
         
-        self.save_settings() # Save current working settings
+        self.save_settings()
         self.is_running = True
         self.btn_start.config(state="disabled")
         self.btn_reset.config(state="disabled")
