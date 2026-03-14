@@ -14,16 +14,15 @@ CONFIG_FILE = "sub_master_config.json"
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v24 (Ultimate Auto-Pilot)")
+        self.root.title("Universal AI Subtitle Master v25 (Flawless Edition)")
         self.root.geometry("650x850")
         self.root.configure(bg="#1e272e")
 
-        # --- STATE VARIABLES ---
         self.is_running = False
         self.provider_type = "Unknown"
         self.file_path = ""
+        self.current_thread = None # To track the translation thread
 
-        # --- UI ELEMENTS ---
         tk.Label(root, text="UNIVERSAL AI TRANSLATOR", bg="#1e272e", fg="#00d8d6", font=("Arial", 16, "bold")).pack(pady=15)
 
         tk.Label(root, text="Paste your API Key here (Auto-Detects Provider & Best Model):", bg="#1e272e", fg="#d2dae2").pack(pady=(5, 0))
@@ -73,7 +72,6 @@ class UniversalSubtitleApp:
         self.log_box = tk.Text(root, height=10, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
         self.log_box.pack(pady=5, padx=20)
 
-        # --- CONTROL BUTTONS ---
         btn_frame = tk.Frame(root, bg="#1e272e")
         btn_frame.pack(pady=15)
 
@@ -88,16 +86,10 @@ class UniversalSubtitleApp:
 
         self.load_settings()
 
-    # --- SETTINGS MANAGEMENT ---
     def save_settings(self):
-        data = {
-            "api_key": self.api_var.get(),
-            "base_url": self.base_url_var.get(),
-            "model_name": self.model_var.get()
-        }
+        data = {"api_key": self.api_var.get(), "base_url": self.base_url_var.get(), "model_name": self.model_var.get()}
         try:
-            with open(CONFIG_FILE, "w") as f:
-                json.dump(data, f)
+            with open(CONFIG_FILE, "w") as f: json.dump(data, f)
         except: pass
 
     def load_settings(self):
@@ -110,7 +102,6 @@ class UniversalSubtitleApp:
                     if data.get("model_name"): self.model_var.set(data["model_name"])
             except: pass
 
-    # --- LOGIC & DETECTION ---
     def log(self, text):
         self.log_box.insert(tk.END, "> " + text + "\n")
         self.log_box.see(tk.END)
@@ -138,19 +129,13 @@ class UniversalSubtitleApp:
             threading.Thread(target=self.fetch_best_model, args=(key, "https://integrate.api.nvidia.com/v1", False), daemon=True).start()
         elif key.startswith("gsk_"):
             self.provider_type = "Groq"
-            self.key_status_lbl.config(text="⏳ Groq: Fetching best model...", fg="#ffdd59")
+            self.key_status_lbl.config(text="✅ Detected: Groq API", fg="#0be881")
             self.base_url_var.set("https://api.groq.com/openai/v1")
-            threading.Thread(target=self.fetch_best_model, args=(key, "https://api.groq.com/openai/v1", False), daemon=True).start()
-        elif key.startswith("github_pat_") or key.startswith("ghp_"):
-            self.provider_type = "GitHub"
-            self.key_status_lbl.config(text="⏳ GitHub: Fetching best model...", fg="#ffdd59")
-            self.base_url_var.set("https://models.inference.ai.azure.com")
-            threading.Thread(target=self.fetch_best_model, args=(key, "https://models.inference.ai.azure.com", False), daemon=True).start()
+            self.model_var.set("llama-3.3-70b-versatile")
         else:
             self.provider_type = "OpenAI_Compatible"
             self.key_status_lbl.config(text="⚠️ Unknown Key: Please enter Base URL & Model manually", fg="#ffdd59")
 
-    # --- SMART AUTO-SELECTION LOGIC ---
     def fetch_best_model(self, api_key, base_url, is_openrouter=False):
         try:
             headers = {"Authorization": f"Bearer {api_key}"}
@@ -159,30 +144,31 @@ class UniversalSubtitleApp:
             if response.status_code == 200:
                 models_data = response.json().get('data', [])
                 
-                # If OpenRouter, filter only FREE models first
                 if is_openrouter:
                     available_models = [m['id'] for m in models_data if float(m.get('pricing', {}).get('prompt', 1)) == 0]
                 else:
                     available_models = [m['id'] for m in models_data]
 
-                # PRIORITY LIST FOR SINHALA
-                priorities = ["gemini", "deepseek", "qwen", "gpt-4", "llama"]
+                # FIXED: Reject "coder" models and prioritize good ones
+                priorities = ["gemini", "deepseek-v3", "deepseek-r1", "qwen-72b", "qwen-2.5", "gpt-4o", "llama-3.3"]
                 best_model = ""
 
                 for priority in priorities:
                     for m in available_models:
+                        # Reject coding models for translation
+                        if "coder" in m.lower() or "math" in m.lower():
+                            continue
                         if priority in m.lower():
                             best_model = m
-                            break # Found the best in this priority level
-                    if best_model:
-                        break # Stop searching if a high priority model is found
+                            break
+                    if best_model: break
 
                 if best_model:
                     self.model_var.set(best_model)
                     self.key_status_lbl.config(text=f"✅ Auto-selected: {best_model}", fg="#0be881")
                 else:
-                    # Fallback if priority models not found
-                    fallback = available_models[0] if available_models else "manual-input-required"
+                    # Safe fallback
+                    fallback = "meta-llama/llama-3.1-70b-instruct" if "nvidia" in base_url else available_models[0]
                     self.model_var.set(fallback)
                     self.key_status_lbl.config(text=f"⚠️ Selected fallback: {fallback}", fg="#ffdd59")
             else:
@@ -195,7 +181,6 @@ class UniversalSubtitleApp:
         if self.file_path:
             self.lbl_status_file.config(text=os.path.basename(self.file_path), fg="white")
 
-    # --- BUTTON ACTIONS ---
     def reset_all(self):
         if self.is_running:
             messagebox.showwarning("Warning", "Please STOP the translation before resetting.")
@@ -213,8 +198,17 @@ class UniversalSubtitleApp:
     def stop_process(self):
         if self.is_running:
             self.is_running = False
-            self.log("🛑 STOP signal received. Stopping safely after current chunk...")
+            self.log("🛑 STOPPING... (Please wait a few seconds for the current task to abort)")
             self.btn_stop.config(state="disabled", text="Stopping...")
+            # Force UI reset after 3 seconds if thread is stuck
+            self.root.after(3000, self.force_ui_reset)
+
+    def force_ui_reset(self):
+        self.btn_start.config(state="normal")
+        self.btn_reset.config(state="normal")
+        self.btn_file.config(state="normal")
+        self.btn_stop.config(state="disabled", text="STOP")
+        self.log("🛑 Process completely stopped.")
 
     def start_process(self):
         if not self.file_path or not self.api_var.get().strip():
@@ -228,9 +222,9 @@ class UniversalSubtitleApp:
         self.btn_file.config(state="disabled")
         self.btn_stop.config(state="normal", text="STOP")
         
-        threading.Thread(target=self.translation_thread, daemon=True).start()
+        self.current_thread = threading.Thread(target=self.translation_thread, daemon=True)
+        self.current_thread.start()
 
-    # --- CORE TRANSLATION ENGINE ---
     def translation_thread(self):
         api_key = self.api_var.get().strip()
         base_url = self.base_url_var.get().strip()
@@ -272,9 +266,7 @@ class UniversalSubtitleApp:
             if start_chunk > 1: self.log(f"Resuming from Chunk {start_chunk}...")
 
             for i in range((start_chunk-1)*c_size, len(blocks), c_size):
-                if not self.is_running:
-                    self.log("🛑 Process stopped by user. Progress is saved.")
-                    break
+                if not self.is_running: break
 
                 chunk_blocks = blocks[i:i + c_size]
                 batch = "\n\n".join(chunk_blocks)
@@ -341,20 +333,3 @@ class UniversalSubtitleApp:
 
             if self.is_running:
                 self.log("🎉 ALL DONE! Translation completed successfully.")
-                messagebox.showinfo("Done", "Success!")
-
-        except Exception as e:
-            if "cancelled" not in str(e).lower():
-                self.log(f"CRITICAL Error: {str(e)}")
-                messagebox.showerror("Error", str(e))
-        finally:
-            self.is_running = False
-            self.btn_start.config(state="normal")
-            self.btn_reset.config(state="normal")
-            self.btn_file.config(state="normal")
-            self.btn_stop.config(state="disabled", text="STOP")
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = UniversalSubtitleApp(root)
-    root.mainloop()
