@@ -21,7 +21,7 @@ class UniversalSubtitleApp:
         self.is_running = False
         self.provider_type = "Unknown"
         self.file_path = ""
-        self.current_thread = None # To track the translation thread
+        self.current_thread = None
 
         tk.Label(root, text="UNIVERSAL AI TRANSLATOR", bg="#1e272e", fg="#00d8d6", font=("Arial", 16, "bold")).pack(pady=15)
 
@@ -149,13 +149,11 @@ class UniversalSubtitleApp:
                 else:
                     available_models = [m['id'] for m in models_data]
 
-                # FIXED: Reject "coder" models and prioritize good ones
                 priorities = ["gemini", "deepseek-v3", "deepseek-r1", "qwen-72b", "qwen-2.5", "gpt-4o", "llama-3.3"]
                 best_model = ""
 
                 for priority in priorities:
                     for m in available_models:
-                        # Reject coding models for translation
                         if "coder" in m.lower() or "math" in m.lower():
                             continue
                         if priority in m.lower():
@@ -167,7 +165,6 @@ class UniversalSubtitleApp:
                     self.model_var.set(best_model)
                     self.key_status_lbl.config(text=f"✅ Auto-selected: {best_model}", fg="#0be881")
                 else:
-                    # Safe fallback
                     fallback = "meta-llama/llama-3.1-70b-instruct" if "nvidia" in base_url else available_models[0]
                     self.model_var.set(fallback)
                     self.key_status_lbl.config(text=f"⚠️ Selected fallback: {fallback}", fg="#ffdd59")
@@ -200,7 +197,6 @@ class UniversalSubtitleApp:
             self.is_running = False
             self.log("🛑 STOPPING... (Please wait a few seconds for the current task to abort)")
             self.btn_stop.config(state="disabled", text="Stopping...")
-            # Force UI reset after 3 seconds if thread is stuck
             self.root.after(3000, self.force_ui_reset)
 
     def force_ui_reset(self):
@@ -333,3 +329,17 @@ class UniversalSubtitleApp:
 
             if self.is_running:
                 self.log("🎉 ALL DONE! Translation completed successfully.")
+                messagebox.showinfo("Done", "Success!")
+
+        except Exception as e:
+            if "cancelled" not in str(e).lower():
+                self.log(f"CRITICAL Error: {str(e)}")
+                messagebox.showerror("Error", str(e))
+        finally:
+            self.is_running = False
+            self.root.after(0, self.force_ui_reset)
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = UniversalSubtitleApp(root)
+    root.mainloop()
