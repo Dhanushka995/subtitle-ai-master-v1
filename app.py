@@ -14,7 +14,7 @@ CONFIG_FILE = "sub_master_config.json"
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v26 (Ultimate AI Master)")
+        self.root.title("Universal AI Subtitle Master v27 (Ultimate Quality)")
         self.root.geometry("650x850")
         self.root.configure(bg="#1e272e")
 
@@ -22,7 +22,6 @@ class UniversalSubtitleApp:
         self.provider_type = "Unknown"
         self.file_path = ""
         self.current_thread = None
-        self.previous_context = "" # For Micro Context
 
         tk.Label(root, text="UNIVERSAL AI TRANSLATOR", bg="#1e272e", fg="#00d8d6", font=("Arial", 16, "bold")).pack(pady=15)
 
@@ -133,11 +132,6 @@ class UniversalSubtitleApp:
             self.key_status_lbl.config(text="✅ Detected: Groq API", fg="#0be881")
             self.base_url_var.set("https://api.groq.com/openai/v1")
             self.model_var.set("llama-3.3-70b-versatile")
-        elif key.startswith("github_pat_") or key.startswith("ghp_"):
-            self.provider_type = "GitHub"
-            self.key_status_lbl.config(text="✅ Detected: GitHub Models API", fg="#0be881")
-            self.base_url_var.set("https://models.inference.ai.azure.com")
-            self.model_var.set("gpt-4o-mini")
         else:
             self.provider_type = "OpenAI_Compatible"
             self.key_status_lbl.config(text="⚠️ Unknown Key: Please enter Base URL & Model manually", fg="#ffdd59")
@@ -196,7 +190,6 @@ class UniversalSubtitleApp:
         self.resume_var.set("1")
         self.log_box.delete('1.0', tk.END)
         self.key_status_lbl.config(text="Waiting for API Key...", fg="#808e9b")
-        self.previous_context = ""
         if os.path.exists(CONFIG_FILE): os.remove(CONFIG_FILE)
 
     def stop_process(self):
@@ -220,7 +213,6 @@ class UniversalSubtitleApp:
         
         self.save_settings()
         self.is_running = True
-        self.previous_context = "" # Reset context on new start
         self.btn_start.config(state="disabled")
         self.btn_reset.config(state="disabled")
         self.btn_file.config(state="disabled")
@@ -247,12 +239,24 @@ class UniversalSubtitleApp:
                 save_path = filedialog.askopenfilename(title="Select partially translated SRT file", filetypes=[("SRT files", "*.srt")])
                 if not save_path: raise Exception("Resume cancelled")
 
+            # --- NEW: PARSE SRT BLOCKS PROPERLY ---
             with open(self.file_path, 'r', encoding='utf-8') as f:
                 data = f.read()
 
-            blocks =[b.strip() for b in re.split(r'\n\s*\n', data.strip()) if b.strip()]
+            raw_blocks = [b.strip() for b in re.split(r'\n\s*\n', data.strip()) if b.strip()]
+            parsed_blocks = []
+            
+            for b in raw_blocks:
+                lines = b.split('\n')
+                if len(lines) >= 3:
+                    parsed_blocks.append({
+                        "index": lines[0].strip(),
+                        "time": lines[1].strip(),
+                        "text": "\n".join(lines[2:]).strip()
+                    })
+
             c_size = int(self.chunk_var.get())
-            total_chunks = (len(blocks) // c_size) + (1 if len(blocks) % c_size > 0 else 0)
+            total_chunks = (len(parsed_blocks) // c_size) + (1 if len(parsed_blocks) % c_size > 0 else 0)
             
             gemini_model_to_use = None
             if self.provider_type == "Gemini":
@@ -266,30 +270,28 @@ class UniversalSubtitleApp:
             else:
                 self.log(f"Model: {model_name}")
 
-            self.log(f"Total Blocks: {len(blocks)} | Chunks: {total_chunks}")
+            self.log(f"Total Blocks: {len(parsed_blocks)} | Chunks: {total_chunks}")
             if start_chunk > 1: self.log(f"Resuming from Chunk {start_chunk}...")
 
-            for i in range((start_chunk-1)*c_size, len(blocks), c_size):
+            for i in range((start_chunk-1)*c_size, len(parsed_blocks), c_size):
                 if not self.is_running: break
 
-                chunk_blocks = blocks[i:i + c_size]
-                batch = "\n\n".join(chunk_blocks)
-                expected_count = batch.count("-->")
+                chunk = parsed_blocks[i:i + c_size]
                 current_chunk_num = (i//c_size)+1
                 
-                # --- PRO TRANSLATOR PROMPT & MICRO CONTEXT ---
-                context_str = f"Previous Context (DO NOT translate these, use only to understand the story flow):\n{self.previous_context}\n\n" if self.previous_context else ""
+                # --- NEW: EXTRACT ONLY TEXT FOR AI ---
+                text_payload = ""
+                for j, b in enumerate(chunk):
+                    text_payload += f"ID_{j}:: {b['text']}\n"
                 
-                prompt = f"""{context_str}CRITICAL: You are a Top-Tier Professional Subtitle Translator for Sri Lankan audiences.
-RULES:
-1. Translate the English text into Natural, Spoken {target} (ස්වභාවික කතා කරන භාෂාව).
-2. DO NOT write English words in {target} letters (e.g., do not write 'කාර්', use 'මෝටර් රථය').
-3. Capture the emotions, slang, and jokes accurately.
-4. DO NOT change sequence numbers or timestamps (00:00:10,000 --> 00:00:12,000).
-5. You MUST output exactly {expected_count} subtitles. Do not merge them.
+                prompt = f"""Translate the following English subtitle texts into natural, spoken {target} (ස්වභාවික කතා කරන භාෂාව).
+CRITICAL RULES:
+1. Act as a professional movie subtitle translator. Do not use overly formal book-language.
+2. DO NOT translate the 'ID_X:: ' prefix. Keep it exactly as in English.
+3. There are exactly {len(chunk)} items. You MUST translate all of them.
+4. Output ONLY the translated text with their IDs. No introductions.
 
-Subtitles to translate:
-{batch}"""
+{text_payload}"""
                 
                 success = False
                 while not success and self.is_running:
@@ -313,39 +315,43 @@ Subtitles to translate:
                             res_text = response.choices[0].message.content
 
                         if res_text:
-                            clean = res_text.replace('```srt', '').replace('```', '').strip()
-                            if clean.count("-->") != expected_count:
-                                raise Exception("Line mismatch detected! Retrying...")
+                            # --- NEW: BULLETPROOF RE-ASSEMBLY USING REGEX ---
+                            pattern = r"ID_(\d+)\s*::\s*(.*?)(?=ID_\d+\s*::|$)"
+                            matches = re.findall(pattern, res_text, re.DOTALL)
+                            
+                            if len(matches) != len(chunk):
+                                raise Exception(f"AI missed lines! Expected {len(chunk)}, got {len(matches)}. Retrying...")
+                            
+                            srt_output = ""
+                            for match in matches:
+                                idx_in_chunk = int(match[0])
+                                translated_text = match[1].strip()
+                                
+                                orig_block = chunk[idx_in_chunk]
+                                srt_output += f"{orig_block['index']}\n{orig_block['time']}\n{translated_text}\n\n"
                             
                             with open(save_path, 'a', encoding='utf-8') as f:
-                                f.write(clean + "\n\n")
-                            
-                            # Update Micro Context (Save last 3 blocks of current batch for next round)
-                            self.previous_context = "\n\n".join(chunk_blocks[-3:])
-                            
-                            self.log(f"✅ Chunk {current_chunk_num} of {total_chunks} success!")
+                                f.write(srt_output)
+                                
+                            self.log(f"✅ Chunk {current_chunk_num} of {total_chunks} success! (High Quality)")
                             success = True
+                        else:
+                            raise Exception("AI returned empty response.")
                         
                     except Exception as api_err:
                         err_msg = str(api_err)
-                        # SMART DELAY & ERROR HANDLING
                         if "429" in err_msg or "quota" in err_msg.lower():
-                            # Try to extract seconds from error message if provided by server
-                            sleep_time = 60
-                            nums = re.findall(r'in (\d+)s', err_msg)
-                            if nums: sleep_time = int(nums[0]) + 2
-                            
-                            self.log(f"⏳ Limit Hit! Sleeping for {sleep_time}s...")
-                            for _ in range(sleep_time):
+                            self.log(f"⏳ Limit Hit! Sleeping for 60s...")
+                            for _ in range(60):
                                 if not self.is_running: break
                                 time.sleep(1)
                         else:
-                            self.log(f"⚠️ {err_msg[:40]}... Retrying in 15s")
+                            self.log(f"⚠️ {err_msg[:50]}... Retrying in 15s")
                             for _ in range(15):
                                 if not self.is_running: break
                                 time.sleep(1)
                 
-                if self.is_running and self.delay_enabled.get() and i + c_size < len(blocks):
+                if self.is_running and self.delay_enabled.get() and i + c_size < len(parsed_blocks):
                     self.log("⏳ Waiting for 15s to prevent Rate Limits...")
                     for _ in range(15):
                         if not self.is_running: break
@@ -353,7 +359,7 @@ Subtitles to translate:
 
             if self.is_running:
                 self.log("🎉 ALL DONE! Translation completed successfully.")
-                messagebox.showinfo("Done", "Success!")
+                messagebox.showinfo("Done", "Success! High Quality Translation Saved.")
 
         except Exception as e:
             if "cancelled" not in str(e).lower():
