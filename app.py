@@ -14,7 +14,7 @@ CONFIG_FILE = "sub_master_config.json"
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v25 (Flawless Edition)")
+        self.root.title("Universal AI Subtitle Master v26 (Ultimate AI Master)")
         self.root.geometry("650x850")
         self.root.configure(bg="#1e272e")
 
@@ -22,6 +22,7 @@ class UniversalSubtitleApp:
         self.provider_type = "Unknown"
         self.file_path = ""
         self.current_thread = None
+        self.previous_context = "" # For Micro Context
 
         tk.Label(root, text="UNIVERSAL AI TRANSLATOR", bg="#1e272e", fg="#00d8d6", font=("Arial", 16, "bold")).pack(pady=15)
 
@@ -132,6 +133,11 @@ class UniversalSubtitleApp:
             self.key_status_lbl.config(text="✅ Detected: Groq API", fg="#0be881")
             self.base_url_var.set("https://api.groq.com/openai/v1")
             self.model_var.set("llama-3.3-70b-versatile")
+        elif key.startswith("github_pat_") or key.startswith("ghp_"):
+            self.provider_type = "GitHub"
+            self.key_status_lbl.config(text="✅ Detected: GitHub Models API", fg="#0be881")
+            self.base_url_var.set("https://models.inference.ai.azure.com")
+            self.model_var.set("gpt-4o-mini")
         else:
             self.provider_type = "OpenAI_Compatible"
             self.key_status_lbl.config(text="⚠️ Unknown Key: Please enter Base URL & Model manually", fg="#ffdd59")
@@ -190,6 +196,7 @@ class UniversalSubtitleApp:
         self.resume_var.set("1")
         self.log_box.delete('1.0', tk.END)
         self.key_status_lbl.config(text="Waiting for API Key...", fg="#808e9b")
+        self.previous_context = ""
         if os.path.exists(CONFIG_FILE): os.remove(CONFIG_FILE)
 
     def stop_process(self):
@@ -213,6 +220,7 @@ class UniversalSubtitleApp:
         
         self.save_settings()
         self.is_running = True
+        self.previous_context = "" # Reset context on new start
         self.btn_start.config(state="disabled")
         self.btn_reset.config(state="disabled")
         self.btn_file.config(state="disabled")
@@ -269,12 +277,18 @@ class UniversalSubtitleApp:
                 expected_count = batch.count("-->")
                 current_chunk_num = (i//c_size)+1
                 
-                prompt = f"""CRITICAL: Professional SRT Translator.
-1. DO NOT change sequence numbers or timestamps.
-2. Translate ONLY the English text into natural {target}.
-3. Preserve SRT formatting exactly.
-4. Output EXACTLY {expected_count} subtitles. Do not merge them.
+                # --- PRO TRANSLATOR PROMPT & MICRO CONTEXT ---
+                context_str = f"Previous Context (DO NOT translate these, use only to understand the story flow):\n{self.previous_context}\n\n" if self.previous_context else ""
+                
+                prompt = f"""{context_str}CRITICAL: You are a Top-Tier Professional Subtitle Translator for Sri Lankan audiences.
+RULES:
+1. Translate the English text into Natural, Spoken {target} (ස්වභාවික කතා කරන භාෂාව).
+2. DO NOT write English words in {target} letters (e.g., do not write 'කාර්', use 'මෝටර් රථය').
+3. Capture the emotions, slang, and jokes accurately.
+4. DO NOT change sequence numbers or timestamps (00:00:10,000 --> 00:00:12,000).
+5. You MUST output exactly {expected_count} subtitles. Do not merge them.
 
+Subtitles to translate:
 {batch}"""
                 
                 success = False
@@ -283,7 +297,7 @@ class UniversalSubtitleApp:
                         res_text = ""
                         if self.provider_type == "Gemini":
                             model = genai.GenerativeModel(gemini_model_to_use)
-                            response = model.generate_content(prompt, generation_config={"temperature": 0.2})
+                            response = model.generate_content(prompt, generation_config={"temperature": 0.3})
                             res_text = response.text
                         else:
                             client = OpenAI(
@@ -294,7 +308,7 @@ class UniversalSubtitleApp:
                             response = client.chat.completions.create(
                                 model=model_name,
                                 messages=[{"role": "user", "content": prompt}],
-                                temperature=0.2
+                                temperature=0.3
                             )
                             res_text = response.choices[0].message.content
 
@@ -305,14 +319,24 @@ class UniversalSubtitleApp:
                             
                             with open(save_path, 'a', encoding='utf-8') as f:
                                 f.write(clean + "\n\n")
+                            
+                            # Update Micro Context (Save last 3 blocks of current batch for next round)
+                            self.previous_context = "\n\n".join(chunk_blocks[-3:])
+                            
                             self.log(f"✅ Chunk {current_chunk_num} of {total_chunks} success!")
                             success = True
                         
                     except Exception as api_err:
                         err_msg = str(api_err)
+                        # SMART DELAY & ERROR HANDLING
                         if "429" in err_msg or "quota" in err_msg.lower():
-                            self.log(f"⏳ Limit Hit! Sleeping for 60s...")
-                            for _ in range(60):
+                            # Try to extract seconds from error message if provided by server
+                            sleep_time = 60
+                            nums = re.findall(r'in (\d+)s', err_msg)
+                            if nums: sleep_time = int(nums[0]) + 2
+                            
+                            self.log(f"⏳ Limit Hit! Sleeping for {sleep_time}s...")
+                            for _ in range(sleep_time):
                                 if not self.is_running: break
                                 time.sleep(1)
                         else:
