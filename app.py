@@ -9,12 +9,12 @@ import os
 import requests
 import json
 
-CONFIG_FILE = "sub_master_config_v28.json"
+CONFIG_FILE = "sub_master_config_v29.json"
 
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v28 (The Ultimate Agent)")
+        self.root.title("Universal AI Subtitle Master v29 (Ironclad Formatting)")
         self.root.geometry("700x950")
         self.root.configure(bg="#1e272e")
 
@@ -22,7 +22,6 @@ class UniversalSubtitleApp:
         self.file_path = ""
         self.current_thread = None
 
-        # Auto-fill safety flags
         self.auto_filling_1 = False
         self.auto_filling_2 = False
         self.provider_type_1 = "Unknown"
@@ -104,7 +103,7 @@ class UniversalSubtitleApp:
         self.log_box = tk.Text(root, height=8, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
         self.log_box.pack(pady=5, padx=20)
 
-        # --- CONTROL BUTTONS (START, STOP, RESET) ---
+        # --- CONTROL BUTTONS ---
         btn_frame = tk.Frame(root, bg="#1e272e")
         btn_frame.pack(pady=10)
 
@@ -119,7 +118,6 @@ class UniversalSubtitleApp:
 
         self.load_settings()
 
-    # --- SETTINGS MANAGEMENT ---
     def save_settings(self):
         data = {
             "k1": self.api1_var.get(), "u1": self.url1_var.get(), "m1": self.model1_var.get(),
@@ -146,7 +144,10 @@ class UniversalSubtitleApp:
                     self.auto_filling_2 = False
             except: pass
 
-    # --- AUTO-DETECT & MANUAL FIX LOGIC ---
+    def log(self, text):
+        self.log_box.insert(tk.END, "> " + text + "\n")
+        self.log_box.see(tk.END)
+
     def on_model1_manual_change(self, *args):
         if not self.auto_filling_1 and self.model1_var.get().strip():
             self.status1_lbl.config(text=f"✅ Using Manual Model: {self.model1_var.get()}", fg="#0be881")
@@ -198,16 +199,11 @@ class UniversalSubtitleApp:
     def on_key2_change(self, *args):
         self.provider_type_2 = self.detect_provider(self.api2_var.get().strip(), self.url2_var, self.model2_var, self.status2_lbl, 2)
 
-    def log(self, text):
-        self.log_box.insert(tk.END, "> " + text + "\n")
-        self.log_box.see(tk.END)
-
     def open_file(self):
         self.file_path = filedialog.askopenfilename(filetypes=[("SRT files", "*.srt")])
         if self.file_path:
             self.lbl_status_file.config(text=os.path.basename(self.file_path), fg="white")
 
-    # --- BUTTON ACTIONS ---
     def reset_all(self):
         if self.is_running:
             messagebox.showwarning("Warning", "Please STOP the translation before resetting.")
@@ -256,7 +252,6 @@ class UniversalSubtitleApp:
         self.current_thread = threading.Thread(target=self.translation_thread, daemon=True)
         self.current_thread.start()
 
-    # --- AI CALL ABSTRACTION ---
     def call_ai(self, slot_num, prompt):
         if slot_num == 1:
             key, url, model, provider = self.api1_var.get().strip(), self.url1_var.get().strip(), self.model1_var.get().strip(), self.provider_type_1
@@ -273,7 +268,6 @@ class UniversalSubtitleApp:
             response = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.2)
             return response.choices[0].message.content
 
-    # --- CORE ENGINE ---
     def translation_thread(self):
         try:
             target = self.lang_var.get()
@@ -323,25 +317,49 @@ class UniversalSubtitleApp:
                         res_text = ""
                         
                         if self.manus_enabled.get():
-                            # MANUS MODE: Thinker -> Speaker
+                            # MANUS MODE
                             self.log(f"⚙️ Chunk {current_chunk_num}: Thinking (Slot 1)...")
-                            prompt1 = f"Analyze the context, tone, and slang of these subtitles. Provide a brief English summary to help a translator.\n{text_payload}"
+                            prompt1 = f"Analyze the context and tone of these subtitles. Provide a brief summary of the situation to help a translator understand the scene. Do NOT translate.\n\n{text_payload}"
                             analysis = self.call_ai(1, prompt1)
                             
                             self.log(f"🗣️ Chunk {current_chunk_num}: Translating (Slot 2)...")
-                            prompt2 = f"You are a professional Sri Lankan translator. Translate the text to natural spoken {target} using this context:\n[{analysis}]\n\nRULES: Do not translate ID prefixes. Output exact {len(chunk)} lines.\n{text_payload}"
+                            prompt2 = f"""You are a professional Sri Lankan subtitle translator.
+Here is the context of the scene: [{analysis}]
+
+CRITICAL RULES FOR OUTPUT:
+1. Translate the English text into natural spoken {target}.
+2. You MUST keep the EXACT 'ID_X:: ' prefix before each translated line.
+3. Your output MUST look exactly like this example:
+ID_0::[Translated text 0]
+ID_1:: [Translated text 1]
+4. Do NOT add any introductions or notes. ONLY output the {len(chunk)} translated lines.
+
+Text to translate:
+{text_payload}"""
                             res_text = self.call_ai(2, prompt2)
                         else:
-                            # STANDARD MODE: Slot 1 only
-                            prompt = f"Translate the following English subtitle texts into natural, spoken {target}. Do not translate the 'ID_X::' prefix. Output exactly {len(chunk)} lines.\n\n{text_payload}"
+                            # STANDARD MODE
+                            prompt = f"""You are a professional Sri Lankan subtitle translator.
+CRITICAL RULES FOR OUTPUT:
+1. Translate the English text into natural spoken {target}.
+2. You MUST keep the EXACT 'ID_X:: ' prefix before each translated line.
+3. Your output MUST look exactly like this example:
+ID_0:: [Translated text 0]
+ID_1:: [Translated text 1]
+4. Do NOT add any introductions or notes. ONLY output the {len(chunk)} translated lines.
+
+Text to translate:
+{text_payload}"""
                             res_text = self.call_ai(1, prompt)
 
                         if res_text:
+                            # STRONGER REGEX PARSING
+                            clean = res_text.replace('```srt', '').replace('```text', '').replace('```', '').strip()
                             pattern = r"ID_(\d+)\s*::\s*(.*?)(?=ID_\d+\s*::|$)"
-                            matches = re.findall(pattern, res_text, re.DOTALL)
+                            matches = re.findall(pattern, clean, re.DOTALL)
                             
                             if len(matches) != len(chunk):
-                                raise Exception(f"AI merged lines! (Expected {len(chunk)}, Got {len(matches)})")
+                                raise Exception(f"AI omitted lines or broke format! (Expected {len(chunk)}, Got {len(matches)})")
                             
                             srt_output = ""
                             for match in matches:
@@ -370,7 +388,7 @@ class UniversalSubtitleApp:
                                 if not self.is_running: break
                                 time.sleep(1)
                         else:
-                            self.log(f"⚠️ Error: {err_msg[:40]}... Retrying in 15s")
+                            self.log(f"⚠️ {err_msg[:40]}... Retrying in 15s")
                             for _ in range(15):
                                 if not self.is_running: break
                                 time.sleep(1)
