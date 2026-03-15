@@ -9,12 +9,12 @@ import os
 import requests
 import json
 
-CONFIG_FILE = "sub_master_config_v29.json"
+CONFIG_FILE = "sub_master_config_v31.json"
 
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v29 (Ironclad Formatting)")
+        self.root.title("Universal AI Subtitle Master v31 (Large Log & Thread-Safe)")
         self.root.geometry("700x950")
         self.root.configure(bg="#1e272e")
 
@@ -99,8 +99,8 @@ class UniversalSubtitleApp:
         self.manus_enabled = tk.BooleanVar(value=False)
         tk.Checkbutton(settings_frame, text="Manus Mode (Thinker + Speaker)", variable=self.manus_enabled, bg="#1e272e", fg="#ff9ff3", selectcolor="#1e272e", activebackground="#1e272e").grid(row=2, column=2, columnspan=2, pady=5)
 
-        # --- LOGS ---
-        self.log_box = tk.Text(root, height=8, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
+        # --- LOGS (Height increased to 15 for better visibility) ---
+        self.log_box = tk.Text(root, height=15, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
         self.log_box.pack(pady=5, padx=20)
 
         # --- CONTROL BUTTONS ---
@@ -249,6 +249,7 @@ class UniversalSubtitleApp:
         self.btn_reset.config(state="disabled")
         self.btn_stop.config(state="normal", text="STOP")
         
+        # THREAD SAFETY: Ensure only one thread runs
         self.current_thread = threading.Thread(target=self.translation_thread, daemon=True)
         self.current_thread.start()
 
@@ -269,6 +270,7 @@ class UniversalSubtitleApp:
             return response.choices[0].message.content
 
     def translation_thread(self):
+        my_thread = threading.current_thread()
         try:
             target = self.lang_var.get()
             start_chunk = int(self.resume_var.get())
@@ -302,7 +304,9 @@ class UniversalSubtitleApp:
             if start_chunk > 1: self.log(f"▶️ Resuming from Chunk {start_chunk}...")
 
             for i in range((start_chunk-1)*c_size, len(parsed_blocks), c_size):
-                if not self.is_running: break
+                # THREAD SAFETY CHECK
+                if not self.is_running or threading.current_thread() != self.current_thread: 
+                    break
 
                 chunk = parsed_blocks[i:i + c_size]
                 current_chunk_num = (i//c_size)+1
@@ -312,106 +316,9 @@ class UniversalSubtitleApp:
                     text_payload += f"ID_{j}:: {b['text']}\n"
                 
                 success = False
-                while not success and self.is_running:
+                while not success and self.is_running and threading.current_thread() == self.current_thread:
                     try:
                         res_text = ""
                         
                         if self.manus_enabled.get():
-                            # MANUS MODE
                             self.log(f"⚙️ Chunk {current_chunk_num}: Thinking (Slot 1)...")
-                            prompt1 = f"Analyze the context and tone of these subtitles. Provide a brief summary of the situation to help a translator understand the scene. Do NOT translate.\n\n{text_payload}"
-                            analysis = self.call_ai(1, prompt1)
-                            
-                            self.log(f"🗣️ Chunk {current_chunk_num}: Translating (Slot 2)...")
-                            prompt2 = f"""You are a professional Sri Lankan subtitle translator.
-Here is the context of the scene: [{analysis}]
-
-CRITICAL RULES FOR OUTPUT:
-1. Translate the English text into natural spoken {target}.
-2. You MUST keep the EXACT 'ID_X:: ' prefix before each translated line.
-3. Your output MUST look exactly like this example:
-ID_0::[Translated text 0]
-ID_1:: [Translated text 1]
-4. Do NOT add any introductions or notes. ONLY output the {len(chunk)} translated lines.
-
-Text to translate:
-{text_payload}"""
-                            res_text = self.call_ai(2, prompt2)
-                        else:
-                            # STANDARD MODE
-                            prompt = f"""You are a professional Sri Lankan subtitle translator.
-CRITICAL RULES FOR OUTPUT:
-1. Translate the English text into natural spoken {target}.
-2. You MUST keep the EXACT 'ID_X:: ' prefix before each translated line.
-3. Your output MUST look exactly like this example:
-ID_0:: [Translated text 0]
-ID_1:: [Translated text 1]
-4. Do NOT add any introductions or notes. ONLY output the {len(chunk)} translated lines.
-
-Text to translate:
-{text_payload}"""
-                            res_text = self.call_ai(1, prompt)
-
-                        if res_text:
-                            # STRONGER REGEX PARSING
-                            clean = res_text.replace('```srt', '').replace('```text', '').replace('```', '').strip()
-                            pattern = r"ID_(\d+)\s*::\s*(.*?)(?=ID_\d+\s*::|$)"
-                            matches = re.findall(pattern, clean, re.DOTALL)
-                            
-                            if len(matches) != len(chunk):
-                                raise Exception(f"AI omitted lines or broke format! (Expected {len(chunk)}, Got {len(matches)})")
-                            
-                            srt_output = ""
-                            for match in matches:
-                                idx_in_chunk = int(match[0])
-                                translated_text = match[1].strip()
-                                orig_block = chunk[idx_in_chunk]
-                                srt_output += f"{orig_block['index']}\n{orig_block['time']}\n{translated_text}\n\n"
-                            
-                            with open(save_path, 'a', encoding='utf-8') as f:
-                                f.write(srt_output)
-                                
-                            self.log(f"✅ Chunk {current_chunk_num} success!")
-                            success = True
-                        else:
-                            raise Exception("AI returned empty response.")
-                        
-                    except Exception as api_err:
-                        err_msg = str(api_err)
-                        if "402" in err_msg or "Insufficient" in err_msg:
-                            self.log(f"❌ Account has 0 balance! Stopping here.")
-                            self.is_running = False
-                            break
-                        elif "429" in err_msg or "quota" in err_msg.lower():
-                            self.log(f"⏳ Limit Hit! Sleeping for 60s...")
-                            for _ in range(60):
-                                if not self.is_running: break
-                                time.sleep(1)
-                        else:
-                            self.log(f"⚠️ {err_msg[:40]}... Retrying in 15s")
-                            for _ in range(15):
-                                if not self.is_running: break
-                                time.sleep(1)
-                
-                if self.is_running and self.delay_enabled.get() and i + c_size < len(parsed_blocks):
-                    self.log("⏳ Delaying 15s for safety...")
-                    for _ in range(15):
-                        if not self.is_running: break
-                        time.sleep(1)
-
-            if self.is_running:
-                self.log("🎉 ALL DONE! Translation completed.")
-                messagebox.showinfo("Done", "Success! Translation completed perfectly.")
-
-        except Exception as e:
-            if "cancelled" not in str(e).lower():
-                self.log(f"CRITICAL Error: {str(e)}")
-                messagebox.showerror("Error", str(e))
-        finally:
-            self.is_running = False
-            self.root.after(0, self.force_ui_reset)
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = UniversalSubtitleApp(root)
-    root.mainloop()
