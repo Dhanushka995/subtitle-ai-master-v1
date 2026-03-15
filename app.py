@@ -9,49 +9,78 @@ import os
 import requests
 import json
 
-CONFIG_FILE = "sub_master_config.json"
+CONFIG_FILE = "sub_master_config_v28.json"
 
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v27 (Ultimate Quality)")
-        self.root.geometry("650x850")
+        self.root.title("Universal AI Subtitle Master v28 (The Ultimate Agent)")
+        self.root.geometry("700x950")
         self.root.configure(bg="#1e272e")
 
         self.is_running = False
-        self.provider_type = "Unknown"
         self.file_path = ""
         self.current_thread = None
 
-        tk.Label(root, text="UNIVERSAL AI TRANSLATOR", bg="#1e272e", fg="#00d8d6", font=("Arial", 16, "bold")).pack(pady=15)
+        # Auto-fill safety flags
+        self.auto_filling_1 = False
+        self.auto_filling_2 = False
+        self.provider_type_1 = "Unknown"
+        self.provider_type_2 = "Unknown"
 
-        tk.Label(root, text="Paste your API Key here (Auto-Detects Provider & Best Model):", bg="#1e272e", fg="#d2dae2").pack(pady=(5, 0))
-        self.api_var = tk.StringVar()
-        self.api_var.trace_add("write", self.on_key_change)
-        self.api_entry = tk.Entry(root, textvariable=self.api_var, width=65, show="*", bg="#485460", fg="white", borderwidth=0, font=("Consolas", 10))
-        self.api_entry.pack(pady=5, ipady=6)
+        # --- HEADER ---
+        tk.Label(root, text="UNIVERSAL AI TRANSLATOR", bg="#1e272e", fg="#00d8d6", font=("Arial", 16, "bold")).pack(pady=10)
 
-        self.key_status_lbl = tk.Label(root, text="Waiting for API Key...", bg="#1e272e", fg="#808e9b", font=("Arial", 9, "bold"))
-        self.key_status_lbl.pack(pady=2)
+        # --- SLOT 1 (Primary / Thinker) ---
+        slot1_frame = tk.LabelFrame(root, text=" SLOT 1 (Primary Translation / Thinker) ", bg="#2f3640", fg="#feca57", font=("Arial", 10, "bold"), padx=10, pady=10)
+        slot1_frame.pack(pady=5, fill="x", padx=20)
 
-        self.adv_frame = tk.Frame(root, bg="#2f3640", padx=10, pady=10)
-        self.adv_frame.pack(pady=10, fill="x", padx=40)
-        
-        tk.Label(self.adv_frame, text="Base URL:", bg="#2f3640", fg="white").grid(row=0, column=0, sticky="w")
-        self.base_url_var = tk.StringVar()
-        tk.Entry(self.adv_frame, textvariable=self.base_url_var, width=50, bg="#1e272e", fg="white").grid(row=0, column=1, padx=10, pady=2)
+        tk.Label(slot1_frame, text="API Key 1:", bg="#2f3640", fg="white").grid(row=0, column=0, sticky="w")
+        self.api1_var = tk.StringVar()
+        self.api1_var.trace_add("write", self.on_key1_change)
+        tk.Entry(slot1_frame, textvariable=self.api1_var, width=65, show="*", bg="#1e272e", fg="white", borderwidth=1).grid(row=0, column=1, padx=5, pady=2)
 
-        tk.Label(self.adv_frame, text="Model Name:", bg="#2f3640", fg="white").grid(row=1, column=0, sticky="w")
-        self.model_var = tk.StringVar()
-        tk.Entry(self.adv_frame, textvariable=self.model_var, width=50, bg="#1e272e", fg="white").grid(row=1, column=1, padx=10, pady=2)
+        self.status1_lbl = tk.Label(slot1_frame, text="Waiting for API Key...", bg="#2f3640", fg="#808e9b", font=("Arial", 9, "bold"))
+        self.status1_lbl.grid(row=1, column=1, sticky="w", pady=2)
 
-        self.btn_file = tk.Button(root, text="📂 Select English SRT File", command=self.open_file, bg="#0fb9b1", fg="white", font=("Arial", 10, "bold"), width=30)
-        self.btn_file.pack(pady=10)
+        tk.Label(slot1_frame, text="Base URL:", bg="#2f3640", fg="white").grid(row=2, column=0, sticky="w")
+        self.url1_var = tk.StringVar()
+        tk.Entry(slot1_frame, textvariable=self.url1_var, width=50, bg="#1e272e", fg="white").grid(row=2, column=1, sticky="w", padx=5, pady=2)
+
+        tk.Label(slot1_frame, text="Model Name:", bg="#2f3640", fg="white").grid(row=3, column=0, sticky="w")
+        self.model1_var = tk.StringVar()
+        self.model1_var.trace_add("write", self.on_model1_manual_change)
+        tk.Entry(slot1_frame, textvariable=self.model1_var, width=50, bg="#1e272e", fg="white").grid(row=3, column=1, sticky="w", padx=5, pady=2)
+
+        # --- SLOT 2 (Speaker / Fallback) ---
+        slot2_frame = tk.LabelFrame(root, text=" SLOT 2 (Speaker / Backup) - Optional ", bg="#2f3640", fg="#ff9ff3", font=("Arial", 10, "bold"), padx=10, pady=10)
+        slot2_frame.pack(pady=5, fill="x", padx=20)
+
+        tk.Label(slot2_frame, text="API Key 2:", bg="#2f3640", fg="white").grid(row=0, column=0, sticky="w")
+        self.api2_var = tk.StringVar()
+        self.api2_var.trace_add("write", self.on_key2_change)
+        tk.Entry(slot2_frame, textvariable=self.api2_var, width=65, show="*", bg="#1e272e", fg="white", borderwidth=1).grid(row=0, column=1, padx=5, pady=2)
+
+        self.status2_lbl = tk.Label(slot2_frame, text="Waiting for API Key...", bg="#2f3640", fg="#808e9b", font=("Arial", 9, "bold"))
+        self.status2_lbl.grid(row=1, column=1, sticky="w", pady=2)
+
+        tk.Label(slot2_frame, text="Base URL:", bg="#2f3640", fg="white").grid(row=2, column=0, sticky="w")
+        self.url2_var = tk.StringVar()
+        tk.Entry(slot2_frame, textvariable=self.url2_var, width=50, bg="#1e272e", fg="white").grid(row=2, column=1, sticky="w", padx=5, pady=2)
+
+        tk.Label(slot2_frame, text="Model Name:", bg="#2f3640", fg="white").grid(row=3, column=0, sticky="w")
+        self.model2_var = tk.StringVar()
+        self.model2_var.trace_add("write", self.on_model2_manual_change)
+        tk.Entry(slot2_frame, textvariable=self.model2_var, width=50, bg="#1e272e", fg="white").grid(row=3, column=1, sticky="w", padx=5, pady=2)
+
+        # --- FILE SELECTION ---
+        tk.Button(root, text="📂 Select English SRT File", command=self.open_file, bg="#0fb9b1", fg="white", font=("Arial", 10, "bold"), width=30).pack(pady=10)
         self.lbl_status_file = tk.Label(root, text="No file selected", bg="#1e272e", fg="#808e9b")
         self.lbl_status_file.pack()
 
+        # --- SETTINGS ---
         settings_frame = tk.Frame(root, bg="#1e272e")
-        settings_frame.pack(pady=10)
+        settings_frame.pack(pady=5)
         
         tk.Label(settings_frame, text="Chunk Size:", bg="#1e272e", fg="white").grid(row=0, column=0, padx=5)
         self.chunk_var = tk.StringVar(value="40")
@@ -61,19 +90,23 @@ class UniversalSubtitleApp:
         self.lang_var = tk.StringVar(value="Sinhala")
         ttk.Combobox(settings_frame, textvariable=self.lang_var, values=["Sinhala", "Tamil", "Hindi"], width=10).grid(row=0, column=3, padx=5)
 
-        self.delay_enabled = tk.BooleanVar(value=True)
-        tk.Checkbutton(settings_frame, text="Enable 15s Rate Limit Delay (Safe Mode)", variable=self.delay_enabled, bg="#1e272e", fg="#0be881", selectcolor="#1e272e", activebackground="#1e272e", activeforeground="white").grid(row=1, column=0, columnspan=4, pady=10)
-
-        tk.Label(settings_frame, text="Start from Chunk:", bg="#1e272e", fg="#ff9f43").grid(row=2, column=0, columnspan=2, pady=5, sticky="e")
+        tk.Label(settings_frame, text="Start from Chunk:", bg="#1e272e", fg="#ff9f43").grid(row=1, column=0, columnspan=2, pady=5, sticky="e")
         self.resume_var = tk.StringVar(value="1")
-        tk.Entry(settings_frame, textvariable=self.resume_var, width=6, bg="#ff9f43", fg="black", font=("Arial", 10, "bold")).grid(row=2, column=2, sticky="w", pady=5)
-        tk.Label(settings_frame, text="(Leave 1 for new file)", bg="#1e272e", fg="#808e9b", font=("Arial", 8)).grid(row=2, column=3, sticky="w")
+        tk.Entry(settings_frame, textvariable=self.resume_var, width=6, bg="#ff9f43", fg="black", font=("Arial", 10, "bold")).grid(row=1, column=2, sticky="w", pady=5)
 
-        self.log_box = tk.Text(root, height=10, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
+        self.delay_enabled = tk.BooleanVar(value=True)
+        tk.Checkbutton(settings_frame, text="Enable 15s Delay", variable=self.delay_enabled, bg="#1e272e", fg="#0be881", selectcolor="#1e272e", activebackground="#1e272e").grid(row=2, column=0, columnspan=2, pady=5)
+
+        self.manus_enabled = tk.BooleanVar(value=False)
+        tk.Checkbutton(settings_frame, text="Manus Mode (Thinker + Speaker)", variable=self.manus_enabled, bg="#1e272e", fg="#ff9ff3", selectcolor="#1e272e", activebackground="#1e272e").grid(row=2, column=2, columnspan=2, pady=5)
+
+        # --- LOGS ---
+        self.log_box = tk.Text(root, height=8, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
         self.log_box.pack(pady=5, padx=20)
 
+        # --- CONTROL BUTTONS (START, STOP, RESET) ---
         btn_frame = tk.Frame(root, bg="#1e272e")
-        btn_frame.pack(pady=15)
+        btn_frame.pack(pady=10)
 
         self.btn_start = tk.Button(btn_frame, text="START", command=self.start_process, bg="#0984e3", fg="white", font=("Arial", 12, "bold"), width=15, height=2)
         self.btn_start.grid(row=0, column=0, padx=10)
@@ -86,8 +119,12 @@ class UniversalSubtitleApp:
 
         self.load_settings()
 
+    # --- SETTINGS MANAGEMENT ---
     def save_settings(self):
-        data = {"api_key": self.api_var.get(), "base_url": self.base_url_var.get(), "model_name": self.model_var.get()}
+        data = {
+            "k1": self.api1_var.get(), "u1": self.url1_var.get(), "m1": self.model1_var.get(),
+            "k2": self.api2_var.get(), "u2": self.url2_var.get(), "m2": self.model2_var.get()
+        }
         try:
             with open(CONFIG_FILE, "w") as f: json.dump(data, f)
         except: pass
@@ -97,181 +134,178 @@ class UniversalSubtitleApp:
             try:
                 with open(CONFIG_FILE, "r") as f:
                     data = json.load(f)
-                    if data.get("api_key"): self.api_var.set(data["api_key"])
-                    if data.get("base_url"): self.base_url_var.set(data["base_url"])
-                    if data.get("model_name"): self.model_var.set(data["model_name"])
+                    self.auto_filling_1 = True
+                    self.auto_filling_2 = True
+                    if data.get("k1"): self.api1_var.set(data["k1"])
+                    if data.get("u1"): self.url1_var.set(data["u1"])
+                    if data.get("m1"): self.model1_var.set(data["m1"])
+                    if data.get("k2"): self.api2_var.set(data["k2"])
+                    if data.get("u2"): self.url2_var.set(data["u2"])
+                    if data.get("m2"): self.model2_var.set(data["m2"])
+                    self.auto_filling_1 = False
+                    self.auto_filling_2 = False
             except: pass
+
+    # --- AUTO-DETECT & MANUAL FIX LOGIC ---
+    def on_model1_manual_change(self, *args):
+        if not self.auto_filling_1 and self.model1_var.get().strip():
+            self.status1_lbl.config(text=f"✅ Using Manual Model: {self.model1_var.get()}", fg="#0be881")
+
+    def on_model2_manual_change(self, *args):
+        if not self.auto_filling_2 and self.model2_var.get().strip():
+            self.status2_lbl.config(text=f"✅ Using Manual Model: {self.model2_var.get()}", fg="#0be881")
+
+    def detect_provider(self, key, url_var, model_var, status_lbl, slot_num):
+        if not key:
+            status_lbl.config(text="Waiting for API Key...", fg="#808e9b")
+            return "Unknown"
+            
+        if slot_num == 1: self.auto_filling_1 = True
+        else: self.auto_filling_2 = True
+
+        provider = "OpenAI_Compatible"
+        if key.startswith("AIza"):
+            provider = "Gemini"
+            status_lbl.config(text="✅ Detected: Google Gemini", fg="#0be881")
+            url_var.set("N/A")
+            model_var.set("gemini-1.5-flash")
+        elif key.startswith("nvapi-"):
+            status_lbl.config(text="✅ Detected: NVIDIA API", fg="#0be881")
+            url_var.set("https://integrate.api.nvidia.com/v1")
+            model_var.set("deepseek-ai/deepseek-v3")
+        elif key.startswith("sk-or-"):
+            status_lbl.config(text="✅ Detected: OpenRouter", fg="#0be881")
+            url_var.set("https://openrouter.ai/api/v1")
+            model_var.set("google/gemini-2.0-flash-lite-preview-02-05:free")
+        elif key.startswith("gsk_"):
+            status_lbl.config(text="✅ Detected: Groq API", fg="#0be881")
+            url_var.set("https://api.groq.com/openai/v1")
+            model_var.set("llama-3.3-70b-versatile")
+        elif key.startswith("github_pat_") or key.startswith("ghp_"):
+            status_lbl.config(text="✅ Detected: GitHub Models", fg="#0be881")
+            url_var.set("https://models.inference.ai.azure.com")
+            model_var.set("gpt-4o-mini")
+        else:
+            status_lbl.config(text="⚠️ Unknown Key: Enter URL & Model manually", fg="#ffdd59")
+            
+        if slot_num == 1: self.auto_filling_1 = False
+        else: self.auto_filling_2 = False
+        return provider
+
+    def on_key1_change(self, *args):
+        self.provider_type_1 = self.detect_provider(self.api1_var.get().strip(), self.url1_var, self.model1_var, self.status1_lbl, 1)
+
+    def on_key2_change(self, *args):
+        self.provider_type_2 = self.detect_provider(self.api2_var.get().strip(), self.url2_var, self.model2_var, self.status2_lbl, 2)
 
     def log(self, text):
         self.log_box.insert(tk.END, "> " + text + "\n")
         self.log_box.see(tk.END)
-
-    def on_key_change(self, *args):
-        key = self.api_var.get().strip()
-        if not key: 
-            self.key_status_lbl.config(text="Waiting for API Key...", fg="#808e9b")
-            return
-
-        if key.startswith("AIza"):
-            self.provider_type = "Gemini"
-            self.key_status_lbl.config(text="✅ Detected: Google Gemini", fg="#0be881")
-            self.base_url_var.set("N/A")
-            self.model_var.set("Auto-Detecting...")
-        elif key.startswith("sk-or-"):
-            self.provider_type = "OpenRouter"
-            self.key_status_lbl.config(text="⏳ OpenRouter: Fetching best FREE model...", fg="#ffdd59")
-            self.base_url_var.set("https://openrouter.ai/api/v1")
-            threading.Thread(target=self.fetch_best_model, args=(key, "https://openrouter.ai/api/v1", True), daemon=True).start()
-        elif key.startswith("nvapi-"):
-            self.provider_type = "NVIDIA"
-            self.key_status_lbl.config(text="⏳ NVIDIA: Fetching best model...", fg="#ffdd59")
-            self.base_url_var.set("https://integrate.api.nvidia.com/v1")
-            threading.Thread(target=self.fetch_best_model, args=(key, "https://integrate.api.nvidia.com/v1", False), daemon=True).start()
-        elif key.startswith("gsk_"):
-            self.provider_type = "Groq"
-            self.key_status_lbl.config(text="✅ Detected: Groq API", fg="#0be881")
-            self.base_url_var.set("https://api.groq.com/openai/v1")
-            self.model_var.set("llama-3.3-70b-versatile")
-        else:
-            self.provider_type = "OpenAI_Compatible"
-            self.key_status_lbl.config(text="⚠️ Unknown Key: Please enter Base URL & Model manually", fg="#ffdd59")
-
-    def fetch_best_model(self, api_key, base_url, is_openrouter=False):
-        try:
-            headers = {"Authorization": f"Bearer {api_key}"}
-            response = requests.get(f"{base_url}/models", headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                models_data = response.json().get('data', [])
-                
-                if is_openrouter:
-                    available_models = [m['id'] for m in models_data if float(m.get('pricing', {}).get('prompt', 1)) == 0]
-                else:
-                    available_models = [m['id'] for m in models_data]
-
-                priorities = ["gemini", "deepseek-v3", "deepseek-r1", "qwen-72b", "qwen-2.5", "gpt-4o", "llama-3.3"]
-                best_model = ""
-
-                for priority in priorities:
-                    for m in available_models:
-                        if "coder" in m.lower() or "math" in m.lower():
-                            continue
-                        if priority in m.lower():
-                            best_model = m
-                            break
-                    if best_model: break
-
-                if best_model:
-                    self.model_var.set(best_model)
-                    self.key_status_lbl.config(text=f"✅ Auto-selected: {best_model}", fg="#0be881")
-                else:
-                    fallback = "meta-llama/llama-3.1-70b-instruct" if "nvidia" in base_url else available_models[0]
-                    self.model_var.set(fallback)
-                    self.key_status_lbl.config(text=f"⚠️ Selected fallback: {fallback}", fg="#ffdd59")
-            else:
-                self.key_status_lbl.config(text="❌ Failed to fetch models. Enter manually.", fg="#ff7675")
-        except Exception as e:
-            self.key_status_lbl.config(text="❌ Network error. Enter manually.", fg="#ff7675")
 
     def open_file(self):
         self.file_path = filedialog.askopenfilename(filetypes=[("SRT files", "*.srt")])
         if self.file_path:
             self.lbl_status_file.config(text=os.path.basename(self.file_path), fg="white")
 
+    # --- BUTTON ACTIONS ---
     def reset_all(self):
         if self.is_running:
             messagebox.showwarning("Warning", "Please STOP the translation before resetting.")
             return
-        self.api_var.set("")
-        self.base_url_var.set("")
-        self.model_var.set("")
+        self.auto_filling_1 = True
+        self.auto_filling_2 = True
+        self.api1_var.set(""); self.url1_var.set(""); self.model1_var.set("")
+        self.api2_var.set(""); self.url2_var.set(""); self.model2_var.set("")
+        self.auto_filling_1 = False
+        self.auto_filling_2 = False
+        
         self.file_path = ""
         self.lbl_status_file.config(text="No file selected", fg="#808e9b")
         self.resume_var.set("1")
         self.log_box.delete('1.0', tk.END)
-        self.key_status_lbl.config(text="Waiting for API Key...", fg="#808e9b")
+        self.status1_lbl.config(text="Waiting for API Key...", fg="#808e9b")
+        self.status2_lbl.config(text="Waiting for API Key...", fg="#808e9b")
         if os.path.exists(CONFIG_FILE): os.remove(CONFIG_FILE)
 
     def stop_process(self):
         if self.is_running:
             self.is_running = False
-            self.log("🛑 STOPPING... (Please wait a few seconds for the current task to abort)")
+            self.log("🛑 STOPPING... Safely aborting after current operation.")
             self.btn_stop.config(state="disabled", text="Stopping...")
             self.root.after(3000, self.force_ui_reset)
 
     def force_ui_reset(self):
         self.btn_start.config(state="normal")
         self.btn_reset.config(state="normal")
-        self.btn_file.config(state="normal")
         self.btn_stop.config(state="disabled", text="STOP")
-        self.log("🛑 Process completely stopped.")
 
     def start_process(self):
-        if not self.file_path or not self.api_var.get().strip():
-            messagebox.showwarning("Input Error", "Please provide the API Key and select a file.")
+        if not self.file_path or not self.api1_var.get().strip():
+            messagebox.showwarning("Input Error", "Please provide at least API Key 1 and select a file.")
             return
-        
+        if self.manus_enabled.get() and not self.api2_var.get().strip():
+            messagebox.showwarning("Input Error", "Manus Mode requires both Slot 1 and Slot 2 to be filled.")
+            return
+            
         self.save_settings()
         self.is_running = True
         self.btn_start.config(state="disabled")
         self.btn_reset.config(state="disabled")
-        self.btn_file.config(state="disabled")
         self.btn_stop.config(state="normal", text="STOP")
         
         self.current_thread = threading.Thread(target=self.translation_thread, daemon=True)
         self.current_thread.start()
 
+    # --- AI CALL ABSTRACTION ---
+    def call_ai(self, slot_num, prompt):
+        if slot_num == 1:
+            key, url, model, provider = self.api1_var.get().strip(), self.url1_var.get().strip(), self.model1_var.get().strip(), self.provider_type_1
+        else:
+            key, url, model, provider = self.api2_var.get().strip(), self.url2_var.get().strip(), self.model2_var.get().strip(), self.provider_type_2
+
+        if provider == "Gemini":
+            genai.configure(api_key=key)
+            m = genai.GenerativeModel(model)
+            response = m.generate_content(prompt, generation_config={"temperature": 0.2})
+            return response.text
+        else:
+            client = OpenAI(api_key=key, base_url=url if url != "N/A" else None, default_headers={"HTTP-Referer": "https://github.com/Dhanushka995", "X-Title": "SubMaster"})
+            response = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.2)
+            return response.choices[0].message.content
+
+    # --- CORE ENGINE ---
     def translation_thread(self):
-        api_key = self.api_var.get().strip()
-        base_url = self.base_url_var.get().strip()
-        model_name = self.model_var.get().strip()
-        
         try:
             target = self.lang_var.get()
             start_chunk = int(self.resume_var.get())
             if start_chunk < 1: start_chunk = 1
             
             if start_chunk == 1:
-                save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"Sub_{target}.srt")
+                save_path = filedialog.asksaveasfilename(defaultextension=".srt", initialfile=f"FinalSub_{target}.srt")
                 if not save_path: raise Exception("Save cancelled")
                 open(save_path, 'w', encoding='utf-8').close()
             else:
                 save_path = filedialog.askopenfilename(title="Select partially translated SRT file", filetypes=[("SRT files", "*.srt")])
                 if not save_path: raise Exception("Resume cancelled")
 
-            # --- NEW: PARSE SRT BLOCKS PROPERLY ---
             with open(self.file_path, 'r', encoding='utf-8') as f:
                 data = f.read()
 
-            raw_blocks = [b.strip() for b in re.split(r'\n\s*\n', data.strip()) if b.strip()]
-            parsed_blocks = []
-            
+            raw_blocks =[b.strip() for b in re.split(r'\n\s*\n', data.strip()) if b.strip()]
+            parsed_blocks =[]
             for b in raw_blocks:
                 lines = b.split('\n')
                 if len(lines) >= 3:
-                    parsed_blocks.append({
-                        "index": lines[0].strip(),
-                        "time": lines[1].strip(),
-                        "text": "\n".join(lines[2:]).strip()
-                    })
+                    parsed_blocks.append({"index": lines[0].strip(), "time": lines[1].strip(), "text": "\n".join(lines[2:]).strip()})
 
             c_size = int(self.chunk_var.get())
             total_chunks = (len(parsed_blocks) // c_size) + (1 if len(parsed_blocks) % c_size > 0 else 0)
             
-            gemini_model_to_use = None
-            if self.provider_type == "Gemini":
-                genai.configure(api_key=api_key)
-                for m in genai.list_models():
-                    if 'generateContent' in m.supported_generation_methods and 'flash' in m.name.lower(): 
-                        gemini_model_to_use = m.name
-                        break
-                if not gemini_model_to_use: gemini_model_to_use = 'gemini-pro'
-                self.log(f"Model: {gemini_model_to_use}")
-            else:
-                self.log(f"Model: {model_name}")
+            self.log(f"Total Blocks: {len(parsed_blocks)} | Total Chunks: {total_chunks}")
+            if self.manus_enabled.get(): self.log("🧠 Manus Mode Enabled: Slot 1 (Thinker) + Slot 2 (Speaker)")
+            else: self.log("⚡ Standard Mode: Using Slot 1")
 
-            self.log(f"Total Blocks: {len(parsed_blocks)} | Chunks: {total_chunks}")
-            if start_chunk > 1: self.log(f"Resuming from Chunk {start_chunk}...")
+            if start_chunk > 1: self.log(f"▶️ Resuming from Chunk {start_chunk}...")
 
             for i in range((start_chunk-1)*c_size, len(parsed_blocks), c_size):
                 if not self.is_running: break
@@ -279,87 +313,77 @@ class UniversalSubtitleApp:
                 chunk = parsed_blocks[i:i + c_size]
                 current_chunk_num = (i//c_size)+1
                 
-                # --- NEW: EXTRACT ONLY TEXT FOR AI ---
                 text_payload = ""
                 for j, b in enumerate(chunk):
                     text_payload += f"ID_{j}:: {b['text']}\n"
-                
-                prompt = f"""Translate the following English subtitle texts into natural, spoken {target} (ස්වභාවික කතා කරන භාෂාව).
-CRITICAL RULES:
-1. Act as a professional movie subtitle translator. Do not use overly formal book-language.
-2. DO NOT translate the 'ID_X:: ' prefix. Keep it exactly as in English.
-3. There are exactly {len(chunk)} items. You MUST translate all of them.
-4. Output ONLY the translated text with their IDs. No introductions.
-
-{text_payload}"""
                 
                 success = False
                 while not success and self.is_running:
                     try:
                         res_text = ""
-                        if self.provider_type == "Gemini":
-                            model = genai.GenerativeModel(gemini_model_to_use)
-                            response = model.generate_content(prompt, generation_config={"temperature": 0.3})
-                            res_text = response.text
+                        
+                        if self.manus_enabled.get():
+                            # MANUS MODE: Thinker -> Speaker
+                            self.log(f"⚙️ Chunk {current_chunk_num}: Thinking (Slot 1)...")
+                            prompt1 = f"Analyze the context, tone, and slang of these subtitles. Provide a brief English summary to help a translator.\n{text_payload}"
+                            analysis = self.call_ai(1, prompt1)
+                            
+                            self.log(f"🗣️ Chunk {current_chunk_num}: Translating (Slot 2)...")
+                            prompt2 = f"You are a professional Sri Lankan translator. Translate the text to natural spoken {target} using this context:\n[{analysis}]\n\nRULES: Do not translate ID prefixes. Output exact {len(chunk)} lines.\n{text_payload}"
+                            res_text = self.call_ai(2, prompt2)
                         else:
-                            client = OpenAI(
-                                api_key=api_key, 
-                                base_url=base_url if base_url != "N/A" else None,
-                                default_headers={"HTTP-Referer": "https://github.com/Dhanushka995", "X-Title": "SubMaster"}
-                            )
-                            response = client.chat.completions.create(
-                                model=model_name,
-                                messages=[{"role": "user", "content": prompt}],
-                                temperature=0.3
-                            )
-                            res_text = response.choices[0].message.content
+                            # STANDARD MODE: Slot 1 only
+                            prompt = f"Translate the following English subtitle texts into natural, spoken {target}. Do not translate the 'ID_X::' prefix. Output exactly {len(chunk)} lines.\n\n{text_payload}"
+                            res_text = self.call_ai(1, prompt)
 
                         if res_text:
-                            # --- NEW: BULLETPROOF RE-ASSEMBLY USING REGEX ---
                             pattern = r"ID_(\d+)\s*::\s*(.*?)(?=ID_\d+\s*::|$)"
                             matches = re.findall(pattern, res_text, re.DOTALL)
                             
                             if len(matches) != len(chunk):
-                                raise Exception(f"AI missed lines! Expected {len(chunk)}, got {len(matches)}. Retrying...")
+                                raise Exception(f"AI merged lines! (Expected {len(chunk)}, Got {len(matches)})")
                             
                             srt_output = ""
                             for match in matches:
                                 idx_in_chunk = int(match[0])
                                 translated_text = match[1].strip()
-                                
                                 orig_block = chunk[idx_in_chunk]
                                 srt_output += f"{orig_block['index']}\n{orig_block['time']}\n{translated_text}\n\n"
                             
                             with open(save_path, 'a', encoding='utf-8') as f:
                                 f.write(srt_output)
                                 
-                            self.log(f"✅ Chunk {current_chunk_num} of {total_chunks} success! (High Quality)")
+                            self.log(f"✅ Chunk {current_chunk_num} success!")
                             success = True
                         else:
                             raise Exception("AI returned empty response.")
                         
                     except Exception as api_err:
                         err_msg = str(api_err)
-                        if "429" in err_msg or "quota" in err_msg.lower():
+                        if "402" in err_msg or "Insufficient" in err_msg:
+                            self.log(f"❌ Account has 0 balance! Stopping here.")
+                            self.is_running = False
+                            break
+                        elif "429" in err_msg or "quota" in err_msg.lower():
                             self.log(f"⏳ Limit Hit! Sleeping for 60s...")
                             for _ in range(60):
                                 if not self.is_running: break
                                 time.sleep(1)
                         else:
-                            self.log(f"⚠️ {err_msg[:50]}... Retrying in 15s")
+                            self.log(f"⚠️ Error: {err_msg[:40]}... Retrying in 15s")
                             for _ in range(15):
                                 if not self.is_running: break
                                 time.sleep(1)
                 
                 if self.is_running and self.delay_enabled.get() and i + c_size < len(parsed_blocks):
-                    self.log("⏳ Waiting for 15s to prevent Rate Limits...")
+                    self.log("⏳ Delaying 15s for safety...")
                     for _ in range(15):
                         if not self.is_running: break
                         time.sleep(1)
 
             if self.is_running:
-                self.log("🎉 ALL DONE! Translation completed successfully.")
-                messagebox.showinfo("Done", "Success! High Quality Translation Saved.")
+                self.log("🎉 ALL DONE! Translation completed.")
+                messagebox.showinfo("Done", "Success! Translation completed perfectly.")
 
         except Exception as e:
             if "cancelled" not in str(e).lower():
