@@ -9,12 +9,12 @@ import os
 import requests
 import json
 
-CONFIG_FILE = "sub_master_config_v31.json"
+CONFIG_FILE = "sub_master_config_v32.json"
 
 class UniversalSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Universal AI Subtitle Master v31 (Large Log & Thread-Safe)")
+        self.root.title("Universal AI Subtitle Master v32 (Smart Alignment & Natural Flow)")
         self.root.geometry("700x950")
         self.root.configure(bg="#1e272e")
 
@@ -99,8 +99,8 @@ class UniversalSubtitleApp:
         self.manus_enabled = tk.BooleanVar(value=False)
         tk.Checkbutton(settings_frame, text="Manus Mode (Thinker + Speaker)", variable=self.manus_enabled, bg="#1e272e", fg="#ff9ff3", selectcolor="#1e272e", activebackground="#1e272e").grid(row=2, column=2, columnspan=2, pady=5)
 
-        # --- LOGS (Height increased to 15 for better visibility) ---
-        self.log_box = tk.Text(root, height=15, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
+        # --- LOGS ---
+        self.log_box = tk.Text(root, height=12, width=75, bg="#000000", fg="#0be881", font=("Consolas", 9))
         self.log_box.pack(pady=5, padx=20)
 
         # --- CONTROL BUTTONS ---
@@ -182,6 +182,10 @@ class UniversalSubtitleApp:
             status_lbl.config(text="✅ Detected: Groq API", fg="#0be881")
             url_var.set("https://api.groq.com/openai/v1")
             model_var.set("llama-3.3-70b-versatile")
+        elif key.startswith("hf_"):
+            status_lbl.config(text="✅ Detected: Hugging Face", fg="#0be881")
+            url_var.set("https://api-inference.huggingface.co/v1")
+            model_var.set("Qwen/Qwen2.5-72B-Instruct")
         elif key.startswith("github_pat_") or key.startswith("ghp_"):
             status_lbl.config(text="✅ Detected: GitHub Models", fg="#0be881")
             url_var.set("https://models.inference.ai.azure.com")
@@ -249,7 +253,6 @@ class UniversalSubtitleApp:
         self.btn_reset.config(state="disabled")
         self.btn_stop.config(state="normal", text="STOP")
         
-        # THREAD SAFETY: Ensure only one thread runs
         self.current_thread = threading.Thread(target=self.translation_thread, daemon=True)
         self.current_thread.start()
 
@@ -259,18 +262,27 @@ class UniversalSubtitleApp:
         else:
             key, url, model, provider = self.api2_var.get().strip(), self.url2_var.get().strip(), self.model2_var.get().strip(), self.provider_type_2
 
+        # TEMPERATURE INCREASED TO 0.7 FOR MAXIMUM NATURAL CREATIVITY
         if provider == "Gemini":
             genai.configure(api_key=key)
             m = genai.GenerativeModel(model)
-            response = m.generate_content(prompt, generation_config={"temperature": 0.2})
+            response = m.generate_content(prompt, generation_config={"temperature": 0.7})
             return response.text
         else:
             client = OpenAI(api_key=key, base_url=url if url != "N/A" else None, default_headers={"HTTP-Referer": "https://github.com/Dhanushka995", "X-Title": "SubMaster"})
-            response = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.2)
+            response = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.7)
             return response.choices[0].message.content
 
+    # --- SMART TIME MERGER ---
+    def merge_times(self, time1, time2):
+        try:
+            start = time1.split("-->")[0].strip()
+            end = time2.split("-->")[1].strip()
+            return f"{start} --> {end}"
+        except:
+            return time1
+
     def translation_thread(self):
-        my_thread = threading.current_thread()
         try:
             target = self.lang_var.get()
             start_chunk = int(self.resume_var.get())
@@ -297,14 +309,13 @@ class UniversalSubtitleApp:
             c_size = int(self.chunk_var.get())
             total_chunks = (len(parsed_blocks) // c_size) + (1 if len(parsed_blocks) % c_size > 0 else 0)
             
-            self.log(f"Total Blocks: {len(parsed_blocks)} | Total Chunks: {total_chunks}")
-            if self.manus_enabled.get(): self.log("🧠 Manus Mode Enabled: Slot 1 (Thinker) + Slot 2 (Speaker)")
-            else: self.log("⚡ Standard Mode: Using Slot 1")
+            self.log(f"Total Blocks: {len(parsed_blocks)} | Chunks: {total_chunks}")
+            if self.manus_enabled.get(): self.log("🧠 Manus Mode Enabled: Thinker + Speaker")
+            else: self.log("⚡ Standard Mode: Natural Flow Enabled")
 
             if start_chunk > 1: self.log(f"▶️ Resuming from Chunk {start_chunk}...")
 
             for i in range((start_chunk-1)*c_size, len(parsed_blocks), c_size):
-                # THREAD SAFETY CHECK
                 if not self.is_running or threading.current_thread() != self.current_thread: 
                     break
 
@@ -322,33 +333,30 @@ class UniversalSubtitleApp:
                         
                         if self.manus_enabled.get():
                             self.log(f"⚙️ Chunk {current_chunk_num}: Thinking (Slot 1)...")
-                            prompt1 = f"Analyze the context and tone of these subtitles. Provide a brief summary of the situation to help a translator understand the scene. Do NOT translate.\n\n{text_payload}"
+                            prompt1 = f"Analyze the context, tone, and slang of these subtitles. Provide a brief summary of the situation to help a translator. Do NOT translate.\n\n{text_payload}"
                             analysis = self.call_ai(1, prompt1)
                             
                             self.log(f"🗣️ Chunk {current_chunk_num}: Translating (Slot 2)...")
-                            prompt2 = f"""You are a professional Sri Lankan subtitle translator.
-Here is the context of the scene: [{analysis}]
+                            prompt2 = f"""You are a highly skilled movie subtitle translator for a Sri Lankan audience.
+Context of the scene: [{analysis}]
 
-CRITICAL RULES FOR OUTPUT:
-1. Translate the English text into natural spoken {target}.
-2. You MUST keep the EXACT 'ID_X:: ' prefix before each translated line.
-3. Your output MUST look exactly like this example:
-ID_0::[Translated text 0]
-ID_1:: [Translated text 1]
-4. Do NOT add any introductions or notes. ONLY output the {len(chunk)} translated lines.
+CRITICAL INSTRUCTIONS:
+1. Translate the English text into NATURAL, SPOKEN {target} (සාමාන්‍ය කතා කරන භාෂාව).
+2. Focus heavily on natural flow, emotions, and local slang. Do not use robotic or formal book-language.
+3. If two lines are better translated as a single sentence, you MAY merge them by combining their translations into the first ID and skipping the second ID.
+4. You MUST keep the 'ID_X:: ' prefix for whatever lines you output so I can map them back.
 
 Text to translate:
 {text_payload}"""
                             res_text = self.call_ai(2, prompt2)
                         else:
-                            prompt = f"""You are a professional Sri Lankan subtitle translator.
-CRITICAL RULES FOR OUTPUT:
-1. Translate the English text into natural spoken {target}.
-2. You MUST keep the EXACT 'ID_X:: ' prefix before each translated line.
-3. Your output MUST look exactly like this example:
-ID_0:: [Translated text 0]
-ID_1:: [Translated text 1]
-4. Do NOT add any introductions or notes. ONLY output the {len(chunk)} translated lines.
+                            prompt = f"""You are a highly skilled movie subtitle translator for a Sri Lankan audience.
+Your task is to translate the following English subtitles into NATURAL, SPOKEN {target} (සාමාන්‍ය කතා කරන භාෂාව).
+
+CRITICAL INSTRUCTIONS:
+1. Focus heavily on natural flow, emotions, and local slang. Do not use robotic or formal book-language.
+2. If two lines are better translated as a single sentence, you MAY merge them by combining their translations into the first ID and skipping the second ID.
+3. You MUST keep the 'ID_X:: ' prefix for whatever lines you output so I can map them back.
 
 Text to translate:
 {text_payload}"""
@@ -359,20 +367,41 @@ Text to translate:
                             pattern = r"ID_(\d+)\s*::\s*(.*?)(?=ID_\d+\s*::|$)"
                             matches = re.findall(pattern, clean, re.DOTALL)
                             
-                            if len(matches) != len(chunk):
-                                raise Exception(f"AI missed lines! (Expected {len(chunk)}, Got {len(matches)})")
+                            if len(matches) == 0:
+                                raise Exception("AI returned no valid IDs. Retrying...")
+                            
+                            # --- SMART ALIGNMENT LOGIC (NEW) ---
+                            translated_dict = {int(m[0]): m[1].strip() for m in matches}
+                            valid_blocks =[]
+                            
+                            for j, orig_block in enumerate(chunk):
+                                if j in translated_dict:
+                                    valid_blocks.append({
+                                        "index": orig_block['index'],
+                                        "time": orig_block['time'],
+                                        "text": translated_dict[j]
+                                    })
+                                else:
+                                    # AI merged or skipped this line! Extend previous time.
+                                    if valid_blocks:
+                                        last_block = valid_blocks[-1]
+                                        last_block['time'] = self.merge_times(last_block['time'], orig_block['time'])
+                                    else:
+                                        # If first line is missing, fallback to original
+                                        valid_blocks.append({
+                                            "index": orig_block['index'],
+                                            "time": orig_block['time'],
+                                            "text": orig_block['text']
+                                        })
                             
                             srt_output = ""
-                            for match in matches:
-                                idx_in_chunk = int(match[0])
-                                translated_text = match[1].strip()
-                                orig_block = chunk[idx_in_chunk]
-                                srt_output += f"{orig_block['index']}\n{orig_block['time']}\n{translated_text}\n\n"
+                            for vb in valid_blocks:
+                                srt_output += f"{vb['index']}\n{vb['time']}\n{vb['text']}\n\n"
                             
                             with open(save_path, 'a', encoding='utf-8') as f:
                                 f.write(srt_output)
                                 
-                            self.log(f"✅ Chunk {current_chunk_num} success!")
+                            self.log(f"✅ Chunk {current_chunk_num} success! (Smart Aligned)")
                             success = True
                         else:
                             raise Exception("AI returned empty response.")
